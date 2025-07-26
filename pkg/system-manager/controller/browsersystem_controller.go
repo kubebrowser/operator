@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
+	apiregv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -65,16 +66,8 @@ type BrowserSystemReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apiregistration.k8s.io,resources=apiservices,verbs=get;create;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the BrowserSystem object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -108,6 +101,7 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.handleNoBrowserController(ctx, system, &log, err)
 	}
 
+	/* browser-api Service	*/
 	browserApiService := &corev1.Service{}
 	err = r.Get(ctx, types.NamespacedName{Name: getBrowserAPIName(system.Name), Namespace: system.Namespace}, browserApiService)
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -116,14 +110,53 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// service not found && should be present => create new
-	if err != nil && apierrors.IsNotFound(err) && system.Spec.EnableApiService {
-		r.createBrowserAPIService(ctx, system, &log)
+	if err != nil && apierrors.IsNotFound(err) && shouldEnableAPIService(system.Spec.EnableApiService) {
+		return r.createBrowserAPIService(ctx, system, &log)
 	}
 
 	// service found && shouldn't be present => delete
-	if err == nil && !system.Spec.EnableApiService {
-		r.deleteBrowserAPIService(ctx, system, browserApiService, &log)
+	if err == nil && !shouldEnableAPIService(system.Spec.EnableApiService) {
+		return r.deleteBrowserAPIService(ctx, system, browserApiService, &log)
 	}
+	/* browser-api Service	*/
+
+	/* browser-api Deployment	*/
+	browserApiDeployment := &appsv1.Deployment{}
+	err = r.Get(ctx, types.NamespacedName{Name: getBrowserAPIName(system.Name), Namespace: system.Namespace}, browserApiDeployment)
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Failed to get Deployment for APIService")
+		return ctrl.Result{}, err
+	}
+
+	// deployment not found && should be present => create new
+	if err != nil && apierrors.IsNotFound(err) && shouldEnableAPIService(system.Spec.EnableApiService) {
+		return r.createBrowserAPIDeployment(ctx, system, &log)
+	}
+
+	// deployment found && shouldn't be present => delete
+	if err == nil && !shouldEnableAPIService(system.Spec.EnableApiService) {
+		return r.deleteBrowserAPIDeployment(ctx, system, browserApiDeployment, &log)
+	}
+	/* browser-api Deployment	*/
+
+	/* browser-api APIService	*/
+	browserApiAPIService := &apiregv1.APIService{}
+	err = r.Get(ctx, types.NamespacedName{Name: getAPIServiceName(subresourceGV)}, browserApiAPIService)
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Failed to get APIService")
+		return ctrl.Result{}, err
+	}
+
+	// APIService not found && should be present => create new
+	if err != nil && apierrors.IsNotFound(err) && shouldEnableAPIService(system.Spec.EnableApiService) {
+		return r.createBrowserApiAPIService(ctx, system, &log)
+	}
+
+	// APIService found && shouldn't be present => delete
+	if err == nil && !shouldEnableAPIService(system.Spec.EnableApiService) {
+		return r.deleteBrowserApiAPIService(ctx, system, browserApiAPIService, &log)
+	}
+	/* browser-api APIService	*/
 
 	// The following implementation will update the status
 	meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
@@ -200,7 +233,11 @@ func (r *BrowserSystemReconciler) handleDeletion(ctx context.Context, key client
 		}
 
 		// execute finalizers
-		r.doFinalizerOperations(system)
+		err := r.doFinalizerOperations(ctx, system, log)
+		if err != nil {
+			log.Error(err, "Failed to perform deletion finalizer operation")
+			return ctrl.Result{}, err
+		}
 
 		if err := r.Get(ctx, key, system); err != nil {
 			log.Error(err, "7 Failed to re-fetch browser")
@@ -233,14 +270,18 @@ func (r *BrowserSystemReconciler) handleDeletion(ctx context.Context, key client
 }
 
 // finalizeBrowser will perform the required operations before delete the CR.
-func (r *BrowserSystemReconciler) doFinalizerOperations(cr *corev1alpha1.BrowserSystem) {
-	// Extra cleanup
-	// The following implementation will raise an event
-	r.Recorder.Event(cr, "Warning", "Deleting",
-		fmt.Sprintf("BrowserSystem %s is being deleted from the namespace %s",
-			cr.Name,
-			cr.Namespace))
+func (r *BrowserSystemReconciler) doFinalizerOperations(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) error {
 
+	// The following implementation will raise an event
+	r.Recorder.Event(system, "Warning", "Deleting",
+		fmt.Sprintf("BrowserSystem %s is being deleted from the namespace %s",
+			system.Name,
+			system.Namespace))
+
+	// delete api service if present
+	err := r.deleteAnyAPIService(ctx, log)
+
+	return err
 }
 
 func (r *BrowserSystemReconciler) handleNoBrowserController(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger, err error) (ctrl.Result, error) {
@@ -278,7 +319,6 @@ func (r *BrowserSystemReconciler) handleNoBrowserController(ctx context.Context,
 	log.Error(err, "18 Failed to get Deployment")
 	// Let's return the error for the reconciliation be re-triggered again
 	return ctrl.Result{}, err
-
 }
 
 func (r *BrowserSystemReconciler) getBrowserControllerDeployment(
@@ -425,4 +465,12 @@ func getBrowserControllerName(systemName string) string {
 // takes system name and returns browser api name
 func getBrowserAPIName(systemName string) string {
 	return systemName + "-browser-api"
+}
+
+func shouldEnableAPIService(value *bool) bool {
+	defaultValue := true
+	if value == nil {
+		return defaultValue
+	}
+	return *value
 }

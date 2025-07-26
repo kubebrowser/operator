@@ -115,7 +115,7 @@ build-browser-api: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	SERVICE_ACCOUNT_NAME="admin-sa" BROWSER_MANAGER_IMAGE="${BROWSER_MANAGER_IMAGE}" BROWSER_IMAGE="quay.io/mohamedf0/browser-server:latest" go run ./cmd/system-manager/system-manager.go
+	SERVICE_ACCOUNT_NAME="admin-sa" BROWSER_MANAGER_IMAGE="${BROWSER_MANAGER_IMAGE}" BROWSER_API_IMAGE="${BROWSER_API_IMAGE}" BROWSER_IMAGE="quay.io/mohamedf0/browser-server:latest" go run ./cmd/system-manager/system-manager.go
 
 run-browser-manager: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/browser-manager/browser-manager.go

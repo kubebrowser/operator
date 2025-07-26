@@ -31,12 +31,12 @@ type BrowserSystemSpec struct {
 	// Whether or not to deploy the api service.
 	// +kubebuilder:default:=true
 	// +optional
-	EnableApiService bool `json:"enableApiService,omitempty"`
+	EnableApiService *bool `json:"enableApiService,omitempty"`
 
 	// Whether or not to deploy the console plugin.
 	// +kubebuilder:default:=true
 	// +optional
-	EnableConsolePlugin bool `json:"enableConsolePlugin,omitempty"`
+	EnableConsolePlugin *bool `json:"enableConsolePlugin,omitempty"`
 }
 
 // BrowserSystemStatus defines the observed state of BrowserSystem.

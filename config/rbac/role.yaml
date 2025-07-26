@@ -24,6 +24,15 @@ rules:
   - update
   - watch
 - apiGroups:
+  - apiregistration.k8s.io
+  resources:
+  - apiservices
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+- apiGroups:
   - apps
   resources:
   - deployments
