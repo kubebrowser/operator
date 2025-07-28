@@ -4,6 +4,7 @@ IMG ?= controller:latest
 SYSTEM_MANAGER_IMAGE = quay.io/mohamedf0/kubebrowser-system:latest
 BROWSER_MANAGER_IMAGE = quay.io/mohamedf0/browser-manager:latest
 BROWSER_API_IMAGE = quay.io/mohamedf0/browser-api:latest
+BROWSER_IMAGE = quay.io/mohamedf0/browser-server:latest
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -118,7 +119,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	SERVICE_ACCOUNT_NAME="admin-sa" BROWSER_MANAGER_IMAGE="${BROWSER_MANAGER_IMAGE}" BROWSER_API_IMAGE="${BROWSER_API_IMAGE}" BROWSER_IMAGE="quay.io/mohamedf0/browser-server:latest" go run ./cmd/system-manager/system-manager.go
 
 run-browser-manager: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/browser-manager/browser-manager.go
+	BROWSER_IMAGE=${BROWSER_IMAGE} go run ./cmd/browser-manager/browser-manager.go
 
 run-browser-api: manifests generate fmt vet ## Run a controller from your host.
 	ENVIRONMENT="development" go run ./cmd/browser-api/browser-api.go
