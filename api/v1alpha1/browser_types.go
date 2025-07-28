@@ -27,7 +27,7 @@ type BrowserSpec struct {
 	// Whether or not the deployment should have running instances.
 	// +kubebuilder:default:=true
 	// +optional
-	Started bool `json:"started" protobuf:"bytes,8,opt,name=started"`
+	Started *bool `json:"started,omitempty" protobuf:"bytes,8,opt,name=started"`
 
 	// Resources requirements for the browser container.
 	// +optional

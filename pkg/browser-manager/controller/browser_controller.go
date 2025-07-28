@@ -115,7 +115,7 @@ func (r *BrowserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	expectedReplicas := int32(-1)
-	if browser.Spec.Started {
+	if browser.Spec.Started != nil && *browser.Spec.Started {
 		expectedReplicas = int32(1)
 	} else {
 		expectedReplicas = int32(0)
@@ -172,7 +172,7 @@ func (r *BrowserReconciler) deploymentForBrowser(
 	}
 
 	var replicas int32
-	if browser.Spec.Started {
+	if browser.Spec.Started != nil && *browser.Spec.Started {
 		replicas = 1
 	} else {
 		replicas = 0

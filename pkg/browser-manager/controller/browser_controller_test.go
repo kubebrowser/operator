@@ -72,13 +72,14 @@ var _ = Describe("Browser controller", func() {
 			if err != nil && errors.IsNotFound(err) {
 				// Let's mock our custom resource at the same way that we would
 				// apply on the cluster the manifest under config/samples
+				started := true
 				browser := &corev1alpha1.Browser{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      BrowserName,
 						Namespace: namespace.Name,
 					},
 					Spec: corev1alpha1.BrowserSpec{
-						Started: true,
+						Started: &started,
 						BrowserResources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("50m"),
