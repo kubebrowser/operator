@@ -29,3 +29,5 @@ resources:
 - browsersystem_editor_role.yaml
 - browsersystem_viewer_role.yaml
 
+# roles needed for subresource.kubebrowser.io
+- subresource.yaml

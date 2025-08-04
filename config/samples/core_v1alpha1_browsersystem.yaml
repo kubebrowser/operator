@@ -6,4 +6,4 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: sample
 spec:
-  enableApiService: false
+  enableApiService: true

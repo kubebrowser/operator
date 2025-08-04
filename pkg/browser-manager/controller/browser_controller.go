@@ -204,6 +204,13 @@ func (r *BrowserReconciler) deploymentForBrowser(
 						Name:            "browser",
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Resources:       browser.Spec.BrowserResources,
+						Env: []corev1.EnvVar{{
+							Name:  "BROWSER_WIDTH",
+							Value: "1280",
+						}, {
+							Name:  "BROWSER_HEIGHT",
+							Value: "720",
+						}},
 						SecurityContext: &corev1.SecurityContext{
 							RunAsNonRoot:             ptr.To(true),
 							AllowPrivilegeEscalation: ptr.To(false),

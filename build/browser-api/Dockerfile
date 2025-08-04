@@ -16,6 +16,11 @@ WORKDIR /app
 
 COPY  --from=build-stage /dist/browser-api .
 
-CMD ["/app/browser-api"]
-
+# Use distroless as minimal base image to package the manager binary
+# Refer to https://github.com/GoogleContainerTools/distroless for more details
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=build-stage /dist/browser-api .
+USER 65532:65532
+CMD ["/browser-api"]
 EXPOSE 8443

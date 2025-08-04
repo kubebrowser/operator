@@ -36,6 +36,10 @@ type BrowserSpec struct {
 	// +optional
 	// future feature
 	// PersistentStorageSize resource.Quantity `json:"persistentStorageSize,omitempty" protobuf:"bytes,8,opt,name=persistentStorageSize"`
+
+	// +optional
+	// future feature
+	// window-resolution ? widthxheight?
 }
 
 // BrowserStatus defines the observed state of Browser
