@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	utils "github.com/kubebrowser/operator/pkg/system-manager/utils"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -62,7 +63,7 @@ type BrowserSystemReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=apiregistration.k8s.io,resources=apiservices,verbs=get;create;patch;delete
+// +kubebuilder:rbac:groups=apiregistration.k8s.io,resources=apiservices,verbs=get;list;watch;create;update;patch;delete
 
 func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -159,6 +160,8 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Status: metav1.ConditionTrue, Reason: "Reconciling",
 		Message: fmt.Sprintf("Resources for BrowserSystem (%s) created successfully", system.Name)})
 
+	system.Status.Status = utils.BrowserSystemStatusReady
+
 	if err := r.Status().Update(ctx, system); err != nil {
 		log.Error(err, "33 Failed to update BrowserSystem status 11")
 		return ctrl.Result{}, err
@@ -189,6 +192,8 @@ func (r *BrowserSystemReconciler) handleNotFound(log *logr.Logger, err error) (c
 
 func (r *BrowserSystemReconciler) handleNoConditions(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
 	meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+
+	system.Status.Status = utils.BrowserSystemStatusProgressing
 
 	if err := r.Status().Update(ctx, system); err != nil {
 		log.Error(err, "2 Failed to update Browser status 1")

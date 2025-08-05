@@ -14,7 +14,14 @@ spec:
     singular: browsersystem
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.status
+      name: Status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: BrowserSystem is the Schema for the browsersystems API.
@@ -107,6 +114,10 @@ spec:
                   - type
                   type: object
                 type: array
+              status:
+                default: Unknown
+                description: Most recently observed status of the resources.
+                type: string
             type: object
         type: object
     served: true
