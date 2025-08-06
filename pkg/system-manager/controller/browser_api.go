@@ -304,6 +304,9 @@ func (r *BrowserSystemReconciler) getBrowserApiAPIService(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   getAPIServiceName(subresourceGV),
 			Labels: ls,
+			Annotations: map[string]string{
+				"service.beta.openshift.io/inject-cabundle": "true",
+			},
 		},
 		Spec: apiregv1.APIServiceSpec{
 			Version:              subresourceGV.Version,
