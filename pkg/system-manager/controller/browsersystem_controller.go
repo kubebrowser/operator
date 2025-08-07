@@ -33,6 +33,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1alpha1 "github.com/kubebrowser/operator/api/v1alpha1"
+	ocpv1 "github.com/openshift/api/console/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -154,6 +155,67 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.deleteBrowserApiAPIService(ctx, system, browserApiAPIService, &log)
 	}
 	/* browser-api APIService	*/
+
+	consolePluginName, err := getConsolePluginName()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	/* console-plugin Deployment	*/
+	pluginDeployment := &appsv1.Deployment{}
+	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName, Namespace: system.Namespace}, pluginDeployment)
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Failed to get Console Plugin Deployment")
+		return ctrl.Result{}, err
+	}
+
+	// deployment not found && should be present => create new
+	if err != nil && apierrors.IsNotFound(err) && shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		return r.createConsolePluginDeployment(ctx, system, &log)
+	}
+
+	// deployment found && shouldn't be present => delete
+	if err == nil && !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		return r.deleteConsolePluginDeployment(ctx, system, pluginDeployment, &log)
+	}
+	/* console-plugin Deployment	*/
+
+	/* console-plugin Service	*/
+	pluginService := &corev1.Service{}
+	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName, Namespace: system.Namespace}, pluginService)
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Failed to get Console Plugin Service")
+		return ctrl.Result{}, err
+	}
+
+	// service not found && should be present => create new
+	if err != nil && apierrors.IsNotFound(err) && shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		return r.createConsolePluginService(ctx, system, &log)
+	}
+
+	// service found && shouldn't be present => delete
+	if err == nil && !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		return r.deleteConsolePluginService(ctx, system, pluginService, &log)
+	}
+	/* console-plugin Service	*/
+
+	/* console-plugin Definition	*/
+	consolePlugin := &ocpv1.ConsolePlugin{}
+	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName}, consolePlugin)
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Failed to get Console Plugin")
+		return ctrl.Result{}, err
+	}
+
+	// plugin not found && should be present => create new
+	if err != nil && apierrors.IsNotFound(err) && shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		return r.createConsolePluginDefinition(ctx, system, &log)
+	}
+
+	// plugin found && shouldn't be present => delete
+	if err == nil && !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		return r.deleteConsolePluginDefinition(ctx, system, consolePlugin, &log)
+	}
+	/* console-plugin Definition	*/
 
 	// The following implementation will update the status
 	meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
@@ -279,10 +341,25 @@ func (r *BrowserSystemReconciler) doFinalizerOperations(ctx context.Context, sys
 			system.Name,
 			system.Namespace))
 
-	// delete api service if present
-	err := r.deleteAnyAPIService(ctx, log)
+	// delete any browser CR definitions
+	err := r.deleteAnyBrowsers(ctx, log)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// delete api service if present
+	err = r.deleteAnyAPIService(ctx, log)
+	if err != nil {
+		return err
+	}
+
+	// delete console plugin if present
+	err = r.deleteAnyConsolePlugin(ctx, log)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func getLabelsForSystem(systemName string) map[string]string {
@@ -302,12 +379,15 @@ func getLabelsForSystem(systemName string) map[string]string {
 	}
 }
 
-// takes system name and returns browser api name
-func getBrowserAPIName(systemName string) string {
-	return systemName + "-browser-api"
+func shouldEnableAPIService(value *bool) bool {
+	defaultValue := true
+	if value == nil {
+		return defaultValue
+	}
+	return *value
 }
 
-func shouldEnableAPIService(value *bool) bool {
+func shouldEnableConsolePlugin(value *bool) bool {
 	defaultValue := true
 	if value == nil {
 		return defaultValue

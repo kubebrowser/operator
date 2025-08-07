@@ -5,6 +5,7 @@ SYSTEM_MANAGER_IMAGE = quay.io/mohamedf0/kubebrowser-system:latest
 BROWSER_MANAGER_IMAGE = quay.io/mohamedf0/browser-manager:latest
 BROWSER_API_IMAGE = quay.io/mohamedf0/browser-api:latest
 BROWSER_IMAGE = quay.io/mohamedf0/browser-server:latest
+CONSOLE_PLUGIN_IMAGE = quay.io/mohamedf0/kubebrowser-console-plugin
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -116,7 +117,7 @@ build-browser-api: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	SERVICE_ACCOUNT_NAME="admin-sa" BROWSER_MANAGER_IMAGE="${BROWSER_MANAGER_IMAGE}" BROWSER_API_IMAGE="${BROWSER_API_IMAGE}" BROWSER_IMAGE="quay.io/mohamedf0/browser-server:latest" go run ./cmd/system-manager/system-manager.go
+	SERVICE_ACCOUNT_NAME="admin-sa" BROWSER_MANAGER_IMAGE="${BROWSER_MANAGER_IMAGE}" BROWSER_API_IMAGE="${BROWSER_API_IMAGE}" BROWSER_IMAGE="${BROWSER_IMAGE}" CONSOLE_PLUGIN_IMAGE="${CONSOLE_PLUGIN_IMAGE}" CONSOLE_PLUGIN_NAME="kubebrowser-plugin" go run ./cmd/system-manager/system-manager.go
 
 run-browser-manager: manifests generate fmt vet ## Run a controller from your host.
 	BROWSER_IMAGE=${BROWSER_IMAGE} go run ./cmd/browser-manager/browser-manager.go
@@ -124,18 +125,19 @@ run-browser-manager: manifests generate fmt vet ## Run a controller from your ho
 run-browser-api: manifests generate fmt vet ## Run a controller from your host.
 	ENVIRONMENT="development" go run ./cmd/browser-api/browser-api.go
 
+PLATFORMS ?= linux/amd64
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${SYSTEM_MANAGER_IMAGE} -f ./build/system-manager/Dockerfile .
+	$(CONTAINER_TOOL) build -t ${SYSTEM_MANAGER_IMAGE} --platform=${PLATFORMS} -f ./build/system-manager/Dockerfile .
 
 docker-build-browser-api:
-	$(CONTAINER_TOOL) build -t ${BROWSER_API_IMAGE} -f ./build/browser-api/Dockerfile .
+	$(CONTAINER_TOOL) build -t ${BROWSER_API_IMAGE} --platform=${PLATFORMS} -f ./build/browser-api/Dockerfile .
 
 docker-build-browser-manager:
-	$(CONTAINER_TOOL) build -t ${BROWSER_MANAGER_IMAGE} -f ./build/browser-manager/Dockerfile .
+	$(CONTAINER_TOOL) build -t ${BROWSER_MANAGER_IMAGE} --platform=${PLATFORMS} -f ./build/browser-manager/Dockerfile .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -153,7 +155,7 @@ docker-push-browser-manager:
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile

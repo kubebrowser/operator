@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (r *BrowserSystemReconciler) handleNoBrowserController(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger, err error) (ctrl.Result, error) {
@@ -148,6 +149,24 @@ func (r *BrowserSystemReconciler) getBrowserControllerDeployment(
 		return nil, err
 	}
 	return dep, nil
+}
+
+func (r *BrowserSystemReconciler) deleteAnyBrowsers(ctx context.Context, log *logr.Logger) error {
+	log.Info("Deleting all browsers")
+	browserList := corev1alpha1.BrowserList{}
+	err := r.Client.List(ctx, &browserList, &client.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	for _, browser := range browserList.Items {
+		err := r.Client.Delete(ctx, &browser, &client.DeleteOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to delete browser named %s in namespace %s: %s", browser.Name, browser.Namespace, err)
+		}
+	}
+
+	return nil
 }
 
 func (r *BrowserSystemReconciler) getServiceAccountName(_ *corev1alpha1.BrowserSystem) string {

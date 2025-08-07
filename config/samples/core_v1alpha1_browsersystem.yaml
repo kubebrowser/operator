@@ -7,3 +7,4 @@ metadata:
   name: sample
 spec:
   enableApiService: true
+  enableConsolePlugin: true

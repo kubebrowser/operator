@@ -356,3 +356,8 @@ func (r *BrowserSystemReconciler) deleteAnyAPIService(ctx context.Context, log *
 func getAPIServiceName(gv schema.GroupVersion) string {
 	return fmt.Sprintf("%s.%s", gv.Version, gv.Group)
 }
+
+// takes system name and returns browser api name
+func getBrowserAPIName(systemName string) string {
+	return systemName + "-browser-api"
+}

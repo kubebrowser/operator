@@ -8,6 +8,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	ocpv1 "github.com/openshift/api/console/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	apiregv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
@@ -38,6 +39,8 @@ func init() {
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 
 	utilruntime.Must(apiregv1.AddToScheme(scheme))
+
+	utilruntime.Must(ocpv1.AddToScheme(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
