@@ -52,7 +52,10 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 		err := errors.New("namespace or name parameter is missing in the url")
 		fmt.Println("ERROR", err)
 		w.WriteHeader(500)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -62,7 +65,10 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		fmt.Println("ERROR", err)
 		w.WriteHeader(400)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -77,7 +83,10 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		fmt.Println("ERROR", err)
 		w.WriteHeader(400)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -92,7 +101,10 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 		err := errors.New("'kind' must be one of the following values: '" + strings.Join(validKinds, ", ") + "'")
 		fmt.Println("ERROR", err)
 		w.WriteHeader(400)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -100,7 +112,10 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 		err := errors.New("'url' parameter is required for 'page-navigate' action kind")
 		fmt.Println("ERROR", err)
 		w.WriteHeader(400)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -108,7 +123,10 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 		err := errors.New("'url' parameter is not allowed for '" + actionData.Kind + "' action kind")
 		fmt.Println("ERROR", err)
 		w.WriteHeader(400)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -116,29 +134,46 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		fmt.Println("ERROR", err)
 		w.WriteHeader(500)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		defer resp.Body.Close()
+
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				fmt.Printf("error closing body: %v", err)
+			}
+		}()
 
 		body, err = io.ReadAll(resp.Body)
 		if err != nil {
 			fmt.Println("ERROR", err)
 			w.WriteHeader(400)
-			fmt.Fprint(w, err.Error()+":failed to parse response body")
+			_, err = fmt.Fprint(w, err.Error()+":failed to parse response body")
+			if err != nil {
+				fmt.Println(err)
+			}
 			return
 		}
 
 		err := errors.New("request to browser server returned status code '" + strconv.Itoa(resp.StatusCode) + "' and body '" + string(body) + "'")
 		fmt.Println("ERROR", err)
 		w.WriteHeader(500)
-		fmt.Fprint(w, err)
+		_, err = fmt.Fprint(w, err)
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
-	fmt.Fprint(w, "action executed")
+	_, err = fmt.Fprint(w, "action executed")
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func connectToBrowserVNC(w http.ResponseWriter, req *http.Request) {
@@ -150,7 +185,10 @@ func connectToBrowserVNC(w http.ResponseWriter, req *http.Request) {
 		err := errors.New("namespace or name parameter is missing in the url")
 		fmt.Println("ERROR", err)
 		w.WriteHeader(500)
-		fmt.Fprint(w, err.Error())
+		_, err = fmt.Fprint(w, err.Error())
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
 
@@ -167,22 +205,37 @@ func connectToBrowserVNC(w http.ResponseWriter, req *http.Request) {
 		fmt.Println("Upgrade failed:", err)
 		return
 	}
-	defer wsConn.Close()
+
+	defer func() {
+		if err := wsConn.Close(); err != nil {
+			fmt.Printf("error closing connection: %v\n", err)
+		}
+	}()
 
 	tcpConn, err := net.Dial("tcp", browserVncUrl(name, namespace))
 	if err != nil {
 		fmt.Println("TCP connection failed:", err)
-		wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+		err := wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+		if err != nil {
+			fmt.Println(err)
+		}
 		return
 	}
-	defer tcpConn.Close()
+	defer func() {
+		if err := tcpConn.Close(); err != nil {
+			fmt.Printf("error closing connection: %v\n", err)
+		}
+	}()
 
 	go func() {
 		buf := make([]byte, 1024)
 		for {
 			n, err := tcpConn.Read(buf)
 			if err != nil {
-				wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "TCP closed"))
+				err := wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "TCP closed"))
+				if err != nil {
+					fmt.Println(err)
+				}
 				break
 			}
 			err = wsConn.WriteMessage(websocket.BinaryMessage, buf[:n])

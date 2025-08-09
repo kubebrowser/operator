@@ -43,14 +43,14 @@ type BrowserSystemSpec struct {
 type BrowserSystemStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 
-	// +kubebuilder:default:=Unknown
+	// +kubebuilder:default:="Unknown"
 	// Most recently observed status of the resources.
-	Status string `json:"status,omitempty" protobuf:"bytes,1,opt,name=status"`
+	Phase string `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // BrowserSystem is the Schema for the browsersystems API.
 type BrowserSystem struct {

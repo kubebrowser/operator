@@ -69,11 +69,18 @@ func (app *browserApiApp) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/healthz", func(w http.ResponseWriter, req *http.Request) {
-		fmt.Fprint(w, "OK\n")
+		_, err := fmt.Fprint(w, "OK\n")
+		if err != nil {
+			fmt.Println(err)
+		}
 	}).Methods("GET")
 
 	router.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) {
-		fmt.Fprint(w, "OK\n")
+		_, err := fmt.Fprint(w, "OK\n")
+		if err != nil {
+			fmt.Println(err)
+		}
+
 	}).Methods("GET")
 
 	router.HandleFunc(groupVersionBasePath(gvr), getAPIResourceList).Methods("GET")

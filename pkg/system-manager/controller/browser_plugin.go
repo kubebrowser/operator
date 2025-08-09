@@ -11,7 +11,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,162 +19,109 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (r *BrowserSystemReconciler) createConsolePluginDeployment(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
-	// Define a new deployment
-	dep, err := r.getConsolePluginDeployment(system)
+func (r *BrowserSystemReconciler) reconcileBrowserPlugin(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) (ReconcileResult, error) {
+
+	consolePluginName := getConsolePluginName()
+	/* console-plugin Deployment	*/
+	pluginDeployment := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: consolePluginName, Namespace: system.Namespace}, pluginDeployment)
 	if err != nil {
-		log.Error(err, "14 Failed to define new Deployment resource for System Console Plugin")
-
-		// The following implementation will update the status
-		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to create Service for the browser system (%s): (%s)", system.Name, err)})
-
-		if err := r.Status().Update(ctx, system); err != nil {
-			log.Error(err, "15 Failed to update System status 5")
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
-	}
-
-	log.Info("Creating a new Deployment",
-		"Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
-	if err = r.Create(ctx, dep); err != nil {
-		log.Error(err, "16 Failed to create new Deployment",
-			"Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{Requeue: true}, nil
-
-}
-
-func (r *BrowserSystemReconciler) deleteConsolePluginDeployment(ctx context.Context, system *corev1alpha1.BrowserSystem, deployment *appsv1.Deployment, log *logr.Logger) (ctrl.Result, error) {
-	log.Info("Deleting Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
-	if err := r.Delete(ctx, deployment); err != nil {
-		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to delete deployment for console plugin")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to delete Deployment for the console plugin (%s): (%s)", deployment.Name, err)})
-
-			if err := r.Status().Update(ctx, system); err != nil {
-				log.Error(err, "15 Failed to update System status 5")
-				return ctrl.Result{}, err
+		if apierrors.IsNotFound(err) {
+			if shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+				// deployment not found && should be present => create new
+				err := r.createDeployment(ctx, system, log, ForPlugin)
+				if err != nil {
+					return ReconciledError, err
+				}
+				return ReconciledUpdated, nil
 			}
-
-			return ctrl.Result{}, err
+		} else {
+			log.Error(err, "Failed to get deployment", "For", ForPlugin)
+			return ReconciledError, err
 		}
+	} else if !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		// deployment found but shouldn't be present
+		err := r.deleteResource(ctx, system, pluginDeployment, log)
+		if err != nil {
+			return ReconciledError, err
+		}
+		return ReconciledUpdated, nil
 	}
+	/* console-plugin Deployment	*/
 
-	// deletion success move forward
-	return ctrl.Result{}, nil
-}
-
-func (r *BrowserSystemReconciler) createConsolePluginService(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
-	service, err := r.getConsolePluginService(system)
+	/* console-plugin Service	*/
+	pluginService := &corev1.Service{}
+	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName, Namespace: system.Namespace}, pluginService)
 	if err != nil {
-		log.Error(err, "14 Failed to define new Service resource for Console Plugin")
-
-		// The following implementation will update the status
-		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to create Console Plugin Service for the browser system (%s): (%s)", system.Name, err)})
-
-		if err := r.Status().Update(ctx, system); err != nil {
-			log.Error(err, "15 Failed to update System status 5")
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
-	}
-
-	log.Info("Creating a new service", "service.Name", service.Name)
-
-	if err = r.Create(ctx, service); err != nil {
-		log.Error(err, "16 Failed to create new service", "service.Name", service.Name)
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{Requeue: true}, nil
-}
-
-func (r *BrowserSystemReconciler) deleteConsolePluginService(ctx context.Context, system *corev1alpha1.BrowserSystem, service *corev1.Service, log *logr.Logger) (ctrl.Result, error) {
-	log.Info("Deleting Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-	if err := r.Delete(ctx, service); err != nil {
-		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to delete service for console plugin")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to delete Service for the console plugin (%s): (%s)", service.Name, err)})
-
-			if err := r.Status().Update(ctx, system); err != nil {
-				log.Error(err, "15 Failed to update System status 5")
-				return ctrl.Result{}, err
+		if apierrors.IsNotFound(err) {
+			if shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+				// service not found && should be present => create new
+				err := r.createService(ctx, system, log, ForPlugin)
+				if err != nil {
+					return ReconciledError, err
+				}
+				return ReconciledUpdated, nil
 			}
-
-			return ctrl.Result{}, err
+		} else {
+			log.Error(err, "failed to get service", "for", ForPlugin)
+			return ReconciledError, err
 		}
+	} else if !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		// service found but shouldn't be present
+		err := r.deleteResource(ctx, system, pluginService, log)
+		if err != nil {
+			return ReconciledError, err
+		}
+		return ReconciledUpdated, nil
+	}
+	/* console-plugin Service	*/
+
+	/* console-plugin Definition	*/
+	consolePlugin := &ocpv1.ConsolePlugin{}
+	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName}, consolePlugin)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			if shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+				// consoleplugin not found && should be present => create new
+				err := r.createConsolePluginDefinition(ctx, system, log)
+				if err != nil {
+					return ReconciledError, err
+				}
+				return ReconciledUpdated, nil
+			}
+		} else {
+			log.Error(err, "Failed to get consoleplugin")
+			return ReconciledError, err
+		}
+	} else if !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
+		// service found but shouldn't be present
+		err := r.deleteResource(ctx, system, consolePlugin, log)
+		if err != nil {
+			return ReconciledError, err
+		}
+		return ReconciledUpdated, nil
 	}
 
-	// deletion success move forward
-	return ctrl.Result{}, nil
+	return ReconciledOk, nil
 }
 
-func (r *BrowserSystemReconciler) createConsolePluginDefinition(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
-	plugin, err := r.getConsolePluginDefinition(system)
-	if err != nil {
-		log.Error(err, "14 Failed to define new console plugin resource")
-
-		// The following implementation will update the status
-		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to create Console Plugin Resource for the browser system (%s): (%s)", system.Name, err)})
-
-		if err := r.Status().Update(ctx, system); err != nil {
-			log.Error(err, "15 Failed to update System status 5")
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
-	}
-
+func (r *BrowserSystemReconciler) createConsolePluginDefinition(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) error {
+	plugin := r.getConsolePluginDefinition(system)
 	log.Info("Creating a new console plugin", "Name", plugin.Name)
-
-	if err = r.Create(ctx, plugin); err != nil {
+	if err := r.Create(ctx, plugin); err != nil {
 		log.Error(err, "16 Failed to create new console plugin", "Name", plugin.Name)
-		return ctrl.Result{}, err
+		return err
 	}
 
-	return ctrl.Result{Requeue: true}, nil
-}
-
-func (r *BrowserSystemReconciler) deleteConsolePluginDefinition(ctx context.Context, system *corev1alpha1.BrowserSystem, plugin *ocpv1.ConsolePlugin, log *logr.Logger) (ctrl.Result, error) {
-	log.Info("Deleting Console Plugin", "Name", plugin.Name)
-	if err := r.Delete(ctx, plugin); err != nil {
-		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to delete console plugin")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to delete console plugin (%s): (%s)", plugin.Name, err)})
-
-			if err := r.Status().Update(ctx, system); err != nil {
-				log.Error(err, "15 Failed to update System status 5")
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{}, err
-		}
-	}
-	// deletion success move forward
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *BrowserSystemReconciler) getConsolePluginDeployment(
@@ -183,10 +129,7 @@ func (r *BrowserSystemReconciler) getConsolePluginDeployment(
 
 	ls := getLabelsForSystem(system.Name)
 
-	name, err := getConsolePluginName()
-	if err != nil {
-		return nil, err
-	}
+	name := getConsolePluginName()
 
 	image, err := getConsolePluginImage()
 	if err != nil {
@@ -260,17 +203,16 @@ func (r *BrowserSystemReconciler) getConsolePluginService(
 	system *corev1alpha1.BrowserSystem) (*corev1.Service, error) {
 	ls := getLabelsForSystem(system.Name)
 
-	name, err := getConsolePluginName()
-	if err != nil {
-		return nil, err
-	}
+	name := getConsolePluginName()
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Namespace:   system.Namespace,
-			Labels:      ls,
-			Annotations: map[string]string{"service.beta.openshift.io/serving-cert-secret-name": getConsolePluginCertsName(name)},
+			Name:      name,
+			Namespace: system.Namespace,
+			Labels:    ls,
+			Annotations: map[string]string{
+				"service.beta.openshift.io/serving-cert-secret-name": getConsolePluginCertsName(name),
+			},
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -286,13 +228,10 @@ func (r *BrowserSystemReconciler) getConsolePluginService(
 }
 
 func (r *BrowserSystemReconciler) getConsolePluginDefinition(
-	system *corev1alpha1.BrowserSystem) (*ocpv1.ConsolePlugin, error) {
+	system *corev1alpha1.BrowserSystem) *ocpv1.ConsolePlugin {
 	ls := getLabelsForSystem(system.Name)
 
-	name, err := getConsolePluginName()
-	if err != nil {
-		return nil, err
-	}
+	name := getConsolePluginName()
 
 	plugin := &ocpv1.ConsolePlugin{
 		ObjectMeta: metav1.ObjectMeta{
@@ -316,17 +255,14 @@ func (r *BrowserSystemReconciler) getConsolePluginDefinition(
 		},
 	}
 
-	return plugin, nil
+	return plugin
 }
 
 func (r *BrowserSystemReconciler) deleteAnyConsolePlugin(ctx context.Context, log *logr.Logger) error {
 	plugin := &ocpv1.ConsolePlugin{}
-	name, err := getConsolePluginName()
-	if err != nil {
-		return err
-	}
+	name := getConsolePluginName()
 
-	err = r.Get(ctx, types.NamespacedName{Name: name}, plugin)
+	err := r.Get(ctx, types.NamespacedName{Name: name}, plugin)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -361,14 +297,14 @@ func getConsolePluginImage() (string, error) {
 	return image, nil
 }
 
-func getConsolePluginName() (string, error) {
+func getConsolePluginName() string {
 	var envVar = "CONSOLE_PLUGIN_NAME"
 	name, exists := os.LookupEnv(envVar)
 	if !exists {
-		return "", fmt.Errorf("unable to find %s environment variable with the image", envVar)
+		return "kubebrowser-plugin"
 	}
 
-	return name, nil
+	return name
 }
 
 func getConsolePluginCertsName(consolePluginName string) string {

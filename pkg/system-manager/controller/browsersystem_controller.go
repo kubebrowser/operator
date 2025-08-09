@@ -23,9 +23,7 @@ import (
 
 	utils "github.com/kubebrowser/operator/pkg/system-manager/utils"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	apiregv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -33,7 +31,6 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1alpha1 "github.com/kubebrowser/operator/api/v1alpha1"
-	ocpv1 "github.com/openshift/api/console/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -65,6 +62,15 @@ type BrowserSystemReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apiregistration.k8s.io,resources=apiservices,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
+
+type ReconcileResult string
+
+const (
+	ReconciledOk      ReconcileResult = "reconciled-ok"
+	ReconciledError   ReconcileResult = "reconciled-error"
+	ReconciledUpdated ReconcileResult = "reconciled-updated"
+)
 
 func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -87,142 +93,56 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Check if browser is marked to be deleted
-	isMarkedToBeDeleted := system.GetDeletionTimestamp() != nil
-	if isMarkedToBeDeleted {
+	if system.GetDeletionTimestamp() != nil {
 		return r.handleDeletion(ctx, req.NamespacedName, system, &log)
 	}
 
-	// Check if the browsercontroller deployment already exists, if not create a new one
-	browserControllerDeployment := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: getBrowserControllerName(system.Name), Namespace: system.Namespace}, browserControllerDeployment)
-	if err != nil {
-		return r.handleNoBrowserController(ctx, system, &log, err)
+	result, err := r.reconcileBrowserController(ctx, system, &log)
+	switch result {
+	case ReconciledError:
+		return ctrl.Result{}, err
+	case ReconciledUpdated:
+		return ctrl.Result{Requeue: true}, err
 	}
 
-	/* browser-api Service	*/
-	browserApiService := &corev1.Service{}
-	err = r.Get(ctx, types.NamespacedName{Name: getBrowserAPIName(system.Name), Namespace: system.Namespace}, browserApiService)
-	if err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "Failed to get Service for APIService")
+	if err := r.Get(ctx, req.NamespacedName, system); err != nil {
+		log.Error(err, "Failed to re-fetch browser")
 		return ctrl.Result{}, err
 	}
 
-	// service not found && should be present => create new
-	if err != nil && apierrors.IsNotFound(err) && shouldEnableAPIService(system.Spec.EnableApiService) {
-		return r.createBrowserAPIService(ctx, system, &log)
+	result, err = r.reconcileBrowserApi(ctx, system, &log)
+	switch result {
+	case ReconciledError:
+		return ctrl.Result{}, err
+	case ReconciledUpdated:
+		return ctrl.Result{Requeue: true}, err
 	}
 
-	// service found && shouldn't be present => delete
-	if err == nil && !shouldEnableAPIService(system.Spec.EnableApiService) {
-		return r.deleteBrowserAPIService(ctx, system, browserApiService, &log)
-	}
-	/* browser-api Service	*/
-
-	/* browser-api Deployment	*/
-	browserApiDeployment := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: getBrowserAPIName(system.Name), Namespace: system.Namespace}, browserApiDeployment)
-	if err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "Failed to get Deployment for APIService")
+	if err := r.Get(ctx, req.NamespacedName, system); err != nil {
+		log.Error(err, "Failed to re-fetch browser")
 		return ctrl.Result{}, err
 	}
 
-	// deployment not found && should be present => create new
-	if err != nil && apierrors.IsNotFound(err) && shouldEnableAPIService(system.Spec.EnableApiService) {
-		return r.createBrowserAPIDeployment(ctx, system, &log)
-	}
-
-	// deployment found && shouldn't be present => delete
-	if err == nil && !shouldEnableAPIService(system.Spec.EnableApiService) {
-		return r.deleteBrowserAPIDeployment(ctx, system, browserApiDeployment, &log)
-	}
-	/* browser-api Deployment	*/
-
-	/* browser-api APIService	*/
-	browserApiAPIService := &apiregv1.APIService{}
-	err = r.Get(ctx, types.NamespacedName{Name: getAPIServiceName(subresourceGV)}, browserApiAPIService)
-	if err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "Failed to get APIService")
+	result, err = r.reconcileBrowserPlugin(ctx, system, &log)
+	switch result {
+	case ReconciledError:
 		return ctrl.Result{}, err
-	}
-
-	// APIService not found && should be present => create new
-	if err != nil && apierrors.IsNotFound(err) && shouldEnableAPIService(system.Spec.EnableApiService) {
-		return r.createBrowserApiAPIService(ctx, system, &log)
-	}
-
-	// APIService found && shouldn't be present => delete
-	if err == nil && !shouldEnableAPIService(system.Spec.EnableApiService) {
-		return r.deleteBrowserApiAPIService(ctx, system, browserApiAPIService, &log)
-	}
-	/* browser-api APIService	*/
-
-	consolePluginName, err := getConsolePluginName()
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	/* console-plugin Deployment	*/
-	pluginDeployment := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName, Namespace: system.Namespace}, pluginDeployment)
-	if err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "Failed to get Console Plugin Deployment")
-		return ctrl.Result{}, err
-	}
-
-	// deployment not found && should be present => create new
-	if err != nil && apierrors.IsNotFound(err) && shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
-		return r.createConsolePluginDeployment(ctx, system, &log)
-	}
-
-	// deployment found && shouldn't be present => delete
-	if err == nil && !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
-		return r.deleteConsolePluginDeployment(ctx, system, pluginDeployment, &log)
-	}
-	/* console-plugin Deployment	*/
-
-	/* console-plugin Service	*/
-	pluginService := &corev1.Service{}
-	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName, Namespace: system.Namespace}, pluginService)
-	if err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "Failed to get Console Plugin Service")
-		return ctrl.Result{}, err
-	}
-
-	// service not found && should be present => create new
-	if err != nil && apierrors.IsNotFound(err) && shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
-		return r.createConsolePluginService(ctx, system, &log)
-	}
-
-	// service found && shouldn't be present => delete
-	if err == nil && !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
-		return r.deleteConsolePluginService(ctx, system, pluginService, &log)
-	}
-	/* console-plugin Service	*/
-
-	/* console-plugin Definition	*/
-	consolePlugin := &ocpv1.ConsolePlugin{}
-	err = r.Get(ctx, types.NamespacedName{Name: consolePluginName}, consolePlugin)
-	if err != nil && !apierrors.IsNotFound(err) {
-		log.Error(err, "Failed to get Console Plugin")
-		return ctrl.Result{}, err
-	}
-
-	// plugin not found && should be present => create new
-	if err != nil && apierrors.IsNotFound(err) && shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
-		return r.createConsolePluginDefinition(ctx, system, &log)
-	}
-
-	// plugin found && shouldn't be present => delete
-	if err == nil && !shouldEnableConsolePlugin(system.Spec.EnableConsolePlugin) {
-		return r.deleteConsolePluginDefinition(ctx, system, consolePlugin, &log)
+	case ReconciledUpdated:
+		return ctrl.Result{Requeue: true}, err
 	}
 	/* console-plugin Definition	*/
+
+	if err := r.Get(ctx, req.NamespacedName, system); err != nil {
+		log.Error(err, "Failed to re-fetch browser")
+		return ctrl.Result{}, err
+	}
 
 	// The following implementation will update the status
 	meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
 		Status: metav1.ConditionTrue, Reason: "Reconciling",
 		Message: fmt.Sprintf("Resources for BrowserSystem (%s) created successfully", system.Name)})
 
-	system.Status.Status = utils.BrowserSystemStatusReady
+	system.Status.Phase = utils.BrowserSystemPhaseReady
 
 	if err := r.Status().Update(ctx, system); err != nil {
 		log.Error(err, "33 Failed to update BrowserSystem status 11")
@@ -252,10 +172,19 @@ func (r *BrowserSystemReconciler) handleNotFound(log *logr.Logger, err error) (c
 	return ctrl.Result{}, err
 }
 
-func (r *BrowserSystemReconciler) handleNoConditions(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
-	meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+func (r *BrowserSystemReconciler) handleNoConditions(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) (ctrl.Result, error) {
+	meta.SetStatusCondition(&system.Status.Conditions,
+		metav1.Condition{Type: typeAvailable,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "Reconciling",
+			Message: "Starting reconciliation",
+		})
 
-	system.Status.Status = utils.BrowserSystemStatusProgressing
+	system.Status.Phase = utils.BrowserSystemPhaseProgressing
 
 	if err := r.Status().Update(ctx, system); err != nil {
 		log.Error(err, "2 Failed to update Browser status 1")
@@ -265,7 +194,11 @@ func (r *BrowserSystemReconciler) handleNoConditions(ctx context.Context, system
 	return ctrl.Result{Requeue: true}, nil
 }
 
-func (r *BrowserSystemReconciler) handleNoFinalizers(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
+func (r *BrowserSystemReconciler) handleNoFinalizers(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) (ctrl.Result, error) {
 	log.Info("Adding Finalizer for Browser")
 	if ok := controllerutil.AddFinalizer(system, systemFinalizer); !ok {
 		err := fmt.Errorf("finalizer for Browser was not added")
@@ -281,7 +214,12 @@ func (r *BrowserSystemReconciler) handleNoFinalizers(ctx context.Context, system
 	return ctrl.Result{Requeue: true}, nil
 }
 
-func (r *BrowserSystemReconciler) handleDeletion(ctx context.Context, key client.ObjectKey, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
+func (r *BrowserSystemReconciler) handleDeletion(
+	ctx context.Context,
+	key client.ObjectKey,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(system, systemFinalizer) {
 		log.Info("Performing Finalizer Operations for Browser before delete CR")
 
@@ -289,6 +227,10 @@ func (r *BrowserSystemReconciler) handleDeletion(ctx context.Context, key client
 		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeDegraded,
 			Status: metav1.ConditionUnknown, Reason: "Finalizing",
 			Message: fmt.Sprintf("Performing finalizer operations for the custom resource: %s ", system.Name)})
+
+		if system.Status.Phase != utils.BrowserSystemPhaseDeleting {
+			system.Status.Phase = utils.BrowserSystemPhaseDeleting
+		}
 
 		if err := r.Status().Update(ctx, system); err != nil {
 			log.Error(err, "6 Failed to update Browser status 2")
@@ -333,7 +275,11 @@ func (r *BrowserSystemReconciler) handleDeletion(ctx context.Context, key client
 }
 
 // finalizeBrowser will perform the required operations before delete the CR.
-func (r *BrowserSystemReconciler) doFinalizerOperations(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) error {
+func (r *BrowserSystemReconciler) doFinalizerOperations(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) error {
 
 	// The following implementation will raise an event
 	r.Recorder.Event(system, "Warning", "Deleting",
@@ -359,6 +305,170 @@ func (r *BrowserSystemReconciler) doFinalizerOperations(ctx context.Context, sys
 		return err
 	}
 
+	return nil
+}
+
+const (
+	ForController = "controller"
+	ForApi        = "api"
+	ForPlugin     = "plugin"
+)
+
+func (r *BrowserSystemReconciler) createDeployment(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+	deploymentFor string,
+) error {
+	var deployment *appsv1.Deployment
+	var err error
+
+	switch deploymentFor {
+	case ForController:
+		deployment, err = r.getBrowserControllerDeployment(system)
+	case ForApi:
+		deployment, err = r.getBrowserApiDeployment(system)
+	case ForPlugin:
+		deployment, err = r.getConsolePluginDeployment(system)
+	default:
+		return fmt.Errorf("unexpected deployment for %s", deploymentFor)
+	}
+
+	if err != nil {
+		log.Error(err, "Failed to define deployment", "for", deploymentFor)
+
+		// The following implementation will update the status
+		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
+			Status: metav1.ConditionFalse, Reason: "Reconciling",
+			Message: fmt.Sprintf(
+				"Failed to create %s deployment for the browser system (%s): (%s)",
+				deploymentFor,
+				system.Name,
+				err,
+			)})
+
+		if system.Status.Phase != utils.BrowserSystemPhaseProgressing {
+			system.Status.Phase = utils.BrowserSystemPhaseProgressing
+		}
+
+		if err := r.Status().Update(ctx, system); err != nil {
+			log.Error(err, "15 Failed to update System status 5")
+			return err
+		}
+
+		return err
+	}
+
+	log.Info("Creating a new deployment",
+		"For", deploymentFor,
+		"Deployment.Namespace", deployment.Namespace,
+		"Deployment.Name", deployment.Name)
+
+	if err = r.Create(ctx, deployment); err != nil {
+		log.Error(err,
+			"Failed to create new deployment",
+			"For", deploymentFor,
+			"Deployment.Namespace", deployment.Namespace,
+			"Deployment.Name", deployment.Name,
+		)
+		return err
+	}
+
+	return nil
+}
+
+func (r *BrowserSystemReconciler) createService(ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+	serviceFor string,
+) error {
+	var service *corev1.Service
+	var err error
+
+	switch serviceFor {
+	case ForApi:
+		service, err = r.getBrowserApiService(system)
+	case ForPlugin:
+		service, err = r.getConsolePluginService(system)
+	default:
+		return fmt.Errorf("unexpected service for %s", serviceFor)
+	}
+
+	if err != nil {
+		log.Error(err, "Failed to define service", "for", serviceFor)
+
+		// The following implementation will update the status
+		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
+			Status: metav1.ConditionFalse, Reason: "Reconciling",
+			Message: fmt.Sprintf("Failed to create %s service for the browser system (%s): (%s)", serviceFor, system.Name, err)})
+
+		if system.Status.Phase != utils.BrowserSystemPhaseProgressing {
+			system.Status.Phase = utils.BrowserSystemPhaseProgressing
+		}
+
+		if err := r.Status().Update(ctx, system); err != nil {
+			log.Error(err, "15 Failed to update System status 5")
+			return err
+		}
+
+		return err
+	}
+
+	log.Info("Creating a new service",
+		"For", serviceFor,
+		"Service.Namespace", service.Namespace,
+		"Service.Name", service.Name)
+
+	if err = r.Create(ctx, service); err != nil {
+		log.Error(err, "Failed to create new service",
+			"For", serviceFor,
+			"Service.Namespace", service.Namespace,
+			"Service.Name", service.Name)
+		return err
+	}
+
+	return nil
+}
+
+func (r *BrowserSystemReconciler) deleteResource(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	obj client.Object,
+	log *logr.Logger,
+) error {
+	kind := obj.GetObjectKind()
+	name := obj.GetName()
+	namespace := obj.GetNamespace()
+	log.Info("Deleting resource",
+		"kind", kind,
+		"name", name,
+		"namespace", namespace)
+
+	if err := r.Delete(ctx, obj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to delete resource", "kind", kind,
+				"name", name,
+				"namespace", namespace)
+
+			// The following implementation will update the status
+			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
+				Status: metav1.ConditionFalse, Reason: "Reconciling",
+				Message: fmt.Sprintf("failed to delete %s '%s' in namespace %s : %s", kind, name, namespace, err)})
+
+			if system.Status.Phase != utils.BrowserSystemPhaseProgressing {
+				system.Status.Phase = utils.BrowserSystemPhaseProgressing
+			}
+
+			if err := r.Status().Update(ctx, system); err != nil {
+				log.Error(err, "failed to update System status post resource deletion")
+				return err
+			}
+
+			return err
+		}
+	}
+
+	// deletion success move forward
 	return nil
 }
 

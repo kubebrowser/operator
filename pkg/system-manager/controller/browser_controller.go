@@ -10,50 +10,40 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *BrowserSystemReconciler) handleNoBrowserController(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger, err error) (ctrl.Result, error) {
-	if apierrors.IsNotFound(err) {
-		// Define a new deployment
-		dep, err := r.getBrowserControllerDeployment(system)
-		if err != nil {
-			log.Error(err, "14 Failed to define new Deployment resource for Browser")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to create Deployment for the browser system (%s): (%s)", system.Name, err)})
-
-			if err := r.Status().Update(ctx, system); err != nil {
-				log.Error(err, "15 Failed to update Browser status 5")
-				return ctrl.Result{}, err
+func (r *BrowserSystemReconciler) reconcileBrowserController(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) (ReconcileResult, error) {
+	// Check if the browsercontroller deployment already exists, if not create a new one
+	browserControllerDeployment := &appsv1.Deployment{}
+	err := r.Get(ctx,
+		types.NamespacedName{Name: getBrowserControllerName(system.Name), Namespace: system.Namespace},
+		browserControllerDeployment,
+	)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			err := r.createDeployment(ctx, system, log, ForController)
+			if err != nil {
+				return ReconciledError, err
 			}
-
-			return ctrl.Result{}, err
+			return ReconciledUpdated, nil
+		} else {
+			log.Error(err, "Failed to get deployment", "for", ForController)
+			return ReconciledError, err
 		}
-
-		log.Info("Creating a new Deployment",
-			"Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
-		if err = r.Create(ctx, dep); err != nil {
-			log.Error(err, "16 Failed to create new Deployment",
-				"Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
-			return ctrl.Result{}, err
-		}
-
-		// Deployment created successfully, requeue the reconciliation so that and move forward for the next operations
-		return ctrl.Result{Requeue: true}, nil
 	}
 
-	log.Error(err, "18 Failed to get Deployment")
-	// Let's return the error for the reconciliation be re-triggered again
-	return ctrl.Result{}, err
+	return ReconciledOk, nil
 }
 
 func (r *BrowserSystemReconciler) getBrowserControllerDeployment(
@@ -154,13 +144,13 @@ func (r *BrowserSystemReconciler) getBrowserControllerDeployment(
 func (r *BrowserSystemReconciler) deleteAnyBrowsers(ctx context.Context, log *logr.Logger) error {
 	log.Info("Deleting all browsers")
 	browserList := corev1alpha1.BrowserList{}
-	err := r.Client.List(ctx, &browserList, &client.ListOptions{})
+	err := r.List(ctx, &browserList, &client.ListOptions{})
 	if err != nil {
 		return err
 	}
 
 	for _, browser := range browserList.Items {
-		err := r.Client.Delete(ctx, &browser, &client.DeleteOptions{})
+		err := r.Delete(ctx, &browser, &client.DeleteOptions{})
 		if err != nil {
 			return fmt.Errorf("failed to delete browser named %s in namespace %s: %s", browser.Name, browser.Namespace, err)
 		}

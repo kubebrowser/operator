@@ -54,6 +54,10 @@ spec:
               value: quay.io/mohamedf0/browser-api:latest
             - name: BROWSER_IMAGE
               value: quay.io/mohamedf0/browser-server:latest
+            - name: CONSOLE_PLUGIN_NAME
+              value: kubebrowser-plugin
+            - name: CONSOLE_PLUGIN_IMAGE
+              value: quay.io/mohamedf0/kubebrowser-console-plugin:latest
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

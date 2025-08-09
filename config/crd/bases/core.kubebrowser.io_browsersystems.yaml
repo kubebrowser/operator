@@ -15,8 +15,8 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.status
-      name: Status
+    - jsonPath: .status.phase
+      name: Phase
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -114,7 +114,7 @@ spec:
                   - type
                   type: object
                 type: array
-              status:
+              phase:
                 default: Unknown
                 description: Most recently observed status of the resources.
                 type: string

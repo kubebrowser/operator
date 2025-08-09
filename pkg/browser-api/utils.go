@@ -13,6 +13,10 @@ var gvr = schema.GroupVersionResource{
 	Resource: "browsers",
 }
 
+const (
+	devEnvironment = "development"
+)
+
 func namespacedResourceUrl(gvr schema.GroupVersionResource, subpath string) string {
 	return fmt.Sprintf("/apis/%s/%s/namespaces/{namespace}/%s/{name}/%s", gvr.Group, gvr.Version, gvr.Resource, subpath)
 }
@@ -23,7 +27,7 @@ func groupVersionBasePath(gvr schema.GroupVersionResource) string {
 
 func browserServerUrl(name string, namespace string) string {
 	env := os.Getenv("ENVIRONMENT")
-	if env == "development" {
+	if env == devEnvironment {
 		return "http://localhost:3000/action"
 	}
 
@@ -32,7 +36,7 @@ func browserServerUrl(name string, namespace string) string {
 
 func browserVncUrl(name string, namespace string) string {
 	env := os.Getenv("ENVIRONMENT")
-	if env == "development" {
+	if env == devEnvironment {
 		return "localhost:15900"
 	}
 

@@ -12,7 +12,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,59 +24,99 @@ import (
 
 var subresourceGV = schema.GroupVersion{Group: "subresource.kubebrowser.io", Version: "v1alpha1"}
 
-func (r *BrowserSystemReconciler) createBrowserAPIService(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
-
-	// Define a new service
-	service, err := r.getBrowserApiService(system)
+func (r *BrowserSystemReconciler) reconcileBrowserApi(
+	ctx context.Context,
+	system *corev1alpha1.BrowserSystem,
+	log *logr.Logger,
+) (ReconcileResult, error) {
+	/* browser-api Service	*/
+	browserApiService := &corev1.Service{}
+	err := r.Get(ctx,
+		types.NamespacedName{Name: getBrowserAPIName(system.Name), Namespace: system.Namespace},
+		browserApiService,
+	)
 	if err != nil {
-		log.Error(err, "14 Failed to define new Service resource for System")
-
-		// The following implementation will update the status
-		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to create Service for the browser system (%s): (%s)", system.Name, err)})
-
-		if err := r.Status().Update(ctx, system); err != nil {
-			log.Error(err, "15 Failed to update System status 5")
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
-	}
-
-	log.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-
-	if err = r.Create(ctx, service); err != nil {
-		log.Error(err, "16 Failed to create new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{Requeue: true}, nil
-
-}
-
-func (r *BrowserSystemReconciler) deleteBrowserAPIService(ctx context.Context, system *corev1alpha1.BrowserSystem, service *corev1.Service, log *logr.Logger) (ctrl.Result, error) {
-	log.Info("Deleting Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-	if err := r.Delete(ctx, service); err != nil {
-		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to delete service for api")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to delete Service for the browser api (%s): (%s)", service.Name, err)})
-
-			if err := r.Status().Update(ctx, system); err != nil {
-				log.Error(err, "15 Failed to update System status 5")
-				return ctrl.Result{}, err
+		if apierrors.IsNotFound(err) {
+			if shouldEnableAPIService(system.Spec.EnableApiService) {
+				// service not found && should be present => create new
+				err := r.createService(ctx, system, log, ForApi)
+				if err != nil {
+					return ReconciledError, err
+				}
+				return ReconciledUpdated, nil
 			}
-
-			return ctrl.Result{}, err
+		} else {
+			log.Error(err, "failed to get service", "for", ForApi)
+			return ReconciledError, err
 		}
+	} else if !shouldEnableAPIService(system.Spec.EnableApiService) {
+		// service found but shouldn't be present
+		err := r.deleteResource(ctx, system, browserApiService, log)
+		if err != nil {
+			return ReconciledError, err
+		}
+		return ReconciledUpdated, nil
 	}
+	/* browser-api Service	*/
 
-	// deletion success move forward
-	return ctrl.Result{}, nil
+	/* browser-api Deployment	*/
+	browserApiDeployment := &appsv1.Deployment{}
+	err = r.Get(ctx,
+		types.NamespacedName{Name: getBrowserAPIName(system.Name), Namespace: system.Namespace},
+		browserApiDeployment,
+	)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			if shouldEnableAPIService(system.Spec.EnableApiService) {
+				// deployment not found && should be present => create new
+				err := r.createDeployment(ctx, system, log, ForApi)
+				if err != nil {
+					return ReconciledError, err
+				}
+				return ReconciledUpdated, nil
+			}
+		} else {
+			log.Error(err, "Failed to get deployment", "for", ForApi)
+			return ReconciledError, err
+		}
+	} else if !shouldEnableAPIService(system.Spec.EnableApiService) {
+		// deployment found but shouldn't be present
+		err := r.deleteResource(ctx, system, browserApiDeployment, log)
+		if err != nil {
+			return ReconciledError, err
+		}
+		return ReconciledUpdated, nil
+	}
+	/* browser-api Deployment	*/
+
+	/* browser-api APIService	*/
+	browserApiAPIService := &apiregv1.APIService{}
+	err = r.Get(ctx, types.NamespacedName{Name: getAPIServiceName(subresourceGV)}, browserApiAPIService)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			if shouldEnableAPIService(system.Spec.EnableApiService) {
+				// apiservice not found && should be present => create new
+				err := r.createBrowserApiAPIService(ctx, system, log)
+				if err != nil {
+					return ReconciledError, err
+				}
+				return ReconciledUpdated, err
+			}
+		} else {
+			log.Error(err, "Failed to get apiservice")
+			return ReconciledError, err
+		}
+	} else if !shouldEnableAPIService(system.Spec.EnableApiService) {
+		// apiservice found but shouldn't be present
+		err := r.deleteResource(ctx, system, browserApiAPIService, log)
+		if err != nil {
+			return ReconciledError, err
+		}
+		return ReconciledUpdated, nil
+	}
+	/* browser-api APIService	*/
+
+	return ReconciledOk, nil
 }
 
 func (r *BrowserSystemReconciler) getBrowserApiService(
@@ -107,58 +146,6 @@ func (r *BrowserSystemReconciler) getBrowserApiService(
 
 func getBrowserAPICertsName(browserApiServiceName string) string {
 	return browserApiServiceName + "-certs"
-}
-
-func (r *BrowserSystemReconciler) createBrowserAPIDeployment(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
-	deployment, err := r.getBrowserApiDeployment(system)
-	if err != nil {
-		log.Error(err, "14 Failed to define new Deployment resource for System")
-
-		// The following implementation will update the status
-		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to create Deployment for the browser system (%s): (%s)", system.Name, err)})
-
-		if err := r.Status().Update(ctx, system); err != nil {
-			log.Error(err, "15 Failed to update System status 5")
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
-	}
-
-	log.Info("Creating a new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
-
-	if err = r.Create(ctx, deployment); err != nil {
-		log.Error(err, "16 Failed to create new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{Requeue: true}, nil
-}
-
-func (r *BrowserSystemReconciler) deleteBrowserAPIDeployment(ctx context.Context, system *corev1alpha1.BrowserSystem, deployment *appsv1.Deployment, log *logr.Logger) (ctrl.Result, error) {
-	log.Info("Deleting Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
-	if err := r.Delete(ctx, deployment); err != nil {
-		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to delete deployment for api")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to delete Deployment for the browser api (%s): (%s)", deployment.Name, err)})
-
-			if err := r.Status().Update(ctx, system); err != nil {
-				log.Error(err, "15 Failed to update System status 5")
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{}, err
-		}
-	}
-
-	// deletion success move forward
-	return ctrl.Result{}, nil
 }
 
 func (r *BrowserSystemReconciler) getBrowserApiDeployment(
@@ -193,12 +180,12 @@ func (r *BrowserSystemReconciler) getBrowserApiDeployment(
 						VolumeMounts:    []corev1.VolumeMount{{Name: "certs", MountPath: "/tls", ReadOnly: true}},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-								corev1.ResourceMemory: resource.MustParse("64Mi"),
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+								corev1.ResourceMemory: resource.MustParse("250Mi"),
 							},
 							Limits: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("500m"),
-								corev1.ResourceMemory: resource.MustParse("200Mi"),
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
 							},
 						},
 						SecurityContext: &corev1.SecurityContext{
@@ -242,60 +229,19 @@ func getBrowserAPIImage() (string, error) {
 	return image, nil
 }
 
-func (r *BrowserSystemReconciler) createBrowserApiAPIService(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) (ctrl.Result, error) {
-	apiService, err := r.getBrowserApiAPIService(system)
-	if err != nil {
-		log.Error(err, "14 Failed to define new APIService resource for System")
-
-		// The following implementation will update the status
-		meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to create APIService for the browser system (%s): (%s)", system.Name, err)})
-
-		if err := r.Status().Update(ctx, system); err != nil {
-			log.Error(err, "15 Failed to update System status 5")
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
-	}
-
+func (r *BrowserSystemReconciler) createBrowserApiAPIService(ctx context.Context, system *corev1alpha1.BrowserSystem, log *logr.Logger) error {
+	apiService := r.getBrowserApiAPIService(system)
 	log.Info("Creating a new APIService", "APIService.Name", apiService.Name)
-
-	if err = r.Create(ctx, apiService); err != nil {
+	if err := r.Create(ctx, apiService); err != nil {
 		log.Error(err, "16 Failed to create new APIService", "APIService.Name", apiService.Name)
-		return ctrl.Result{}, err
+		return err
 	}
 
-	return ctrl.Result{Requeue: true}, nil
-}
-
-func (r *BrowserSystemReconciler) deleteBrowserApiAPIService(ctx context.Context, system *corev1alpha1.BrowserSystem, apiService *apiregv1.APIService, log *logr.Logger) (ctrl.Result, error) {
-	log.Info("Deleting APIService", "Name", apiService.Name)
-	if err := r.Delete(ctx, apiService); err != nil {
-		if !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to delete APIService for api")
-
-			// The following implementation will update the status
-			meta.SetStatusCondition(&system.Status.Conditions, metav1.Condition{Type: typeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to delete APIService for the browser api (%s): (%s)", apiService.Name, err)})
-
-			if err := r.Status().Update(ctx, system); err != nil {
-				log.Error(err, "15 Failed to update System status 5")
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{}, err
-		}
-	}
-
-	// deletion success move forward
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *BrowserSystemReconciler) getBrowserApiAPIService(
-	system *corev1alpha1.BrowserSystem) (*apiregv1.APIService, error) {
+	system *corev1alpha1.BrowserSystem) *apiregv1.APIService {
 
 	serviceName := getBrowserAPIName(system.Name)
 	ls := getLabelsForSystem(system.Name)
@@ -325,7 +271,7 @@ func (r *BrowserSystemReconciler) getBrowserApiAPIService(
 	// if err := ctrl.SetControllerReference(system, apiService, r.Scheme); err != nil {
 	// 	return nil, err
 	// }
-	return apiService, nil
+	return apiService
 }
 
 func (r *BrowserSystemReconciler) deleteAnyAPIService(ctx context.Context, log *logr.Logger) error {

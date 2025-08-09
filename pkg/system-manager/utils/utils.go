@@ -1,6 +1,7 @@
 package utils
 
 const (
-	BrowserSystemStatusProgressing = "Progressing"
-	BrowserSystemStatusReady       = "Ready"
+	BrowserSystemPhaseProgressing = "Progressing"
+	BrowserSystemPhaseReady       = "Ready"
+	BrowserSystemPhaseDeleting    = "Deleting"
 )

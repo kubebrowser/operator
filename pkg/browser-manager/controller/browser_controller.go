@@ -319,7 +319,12 @@ func (r *BrowserReconciler) handleBrowserNotFound(log *logr.Logger, err error) (
 	return ctrl.Result{}, err
 }
 
-func (r *BrowserReconciler) handleBrowserDeletion(ctx context.Context, key client.ObjectKey, browser *corev1alpha1.Browser, log *logr.Logger) (ctrl.Result, error) {
+func (r *BrowserReconciler) handleBrowserDeletion(
+	ctx context.Context,
+	key client.ObjectKey,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+) (ctrl.Result, error) {
 	if controllerutil.ContainsFinalizer(browser, browserFinalizer) {
 		log.Info("Performing Finalizer Operations for Browser before delete CR")
 
@@ -366,7 +371,12 @@ func (r *BrowserReconciler) handleBrowserDeletion(ctx context.Context, key clien
 	return ctrl.Result{}, nil
 }
 
-func (r *BrowserReconciler) handleFailedToGetService(ctx context.Context, browser *corev1alpha1.Browser, log *logr.Logger, err error) (ctrl.Result, error) {
+func (r *BrowserReconciler) handleFailedToGetService(
+	ctx context.Context,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+	err error,
+) (ctrl.Result, error) {
 	if apierrors.IsNotFound(err) {
 		// Define a new service
 		svc, err := r.serviceForBrowser(browser)
@@ -403,7 +413,12 @@ func (r *BrowserReconciler) handleFailedToGetService(ctx context.Context, browse
 	return ctrl.Result{}, err
 }
 
-func (r *BrowserReconciler) handleFailedToGetDeployment(ctx context.Context, browser *corev1alpha1.Browser, log *logr.Logger, err error) (ctrl.Result, error) {
+func (r *BrowserReconciler) handleFailedToGetDeployment(
+	ctx context.Context,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+	err error,
+) (ctrl.Result, error) {
 	if apierrors.IsNotFound(err) {
 		// Define a new deployment
 		dep, err := r.deploymentForBrowser(browser)
@@ -448,7 +463,14 @@ func (r *BrowserReconciler) handleFailedToGetDeployment(ctx context.Context, bro
 
 }
 
-func (r *BrowserReconciler) handleDeploymentRepliasMismatch(ctx context.Context, browser *corev1alpha1.Browser, log *logr.Logger, deployment *appsv1.Deployment, expectedReplicas *int32, key client.ObjectKey) (ctrl.Result, error) {
+func (r *BrowserReconciler) handleDeploymentRepliasMismatch(
+	ctx context.Context,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+	deployment *appsv1.Deployment,
+	expectedReplicas *int32,
+	key client.ObjectKey,
+) (ctrl.Result, error) {
 	deployment.Spec.Replicas = expectedReplicas
 
 	if err := r.Update(ctx, deployment); err != nil {
@@ -478,7 +500,13 @@ func (r *BrowserReconciler) handleDeploymentRepliasMismatch(ctx context.Context,
 	return ctrl.Result{Requeue: true}, nil
 }
 
-func (r *BrowserReconciler) handleDeploymentResourcesMismatch(ctx context.Context, browser *corev1alpha1.Browser, log *logr.Logger, deployment *appsv1.Deployment, key client.ObjectKey) (ctrl.Result, error) {
+func (r *BrowserReconciler) handleDeploymentResourcesMismatch(
+	ctx context.Context,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+	deployment *appsv1.Deployment,
+	key client.ObjectKey,
+) (ctrl.Result, error) {
 	deployment.Spec.Template.Spec.Containers[0].Resources = browser.Spec.BrowserResources
 
 	if err := r.Update(ctx, deployment); err != nil {
@@ -508,8 +536,17 @@ func (r *BrowserReconciler) handleDeploymentResourcesMismatch(ctx context.Contex
 	return ctrl.Result{Requeue: true}, nil
 }
 
-func (r *BrowserReconciler) handleNoConditions(ctx context.Context, browser *corev1alpha1.Browser, log *logr.Logger) (ctrl.Result, error) {
-	meta.SetStatusCondition(&browser.Status.Conditions, metav1.Condition{Type: typeAvailableBrowser, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+func (r *BrowserReconciler) handleNoConditions(ctx context.Context,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+) (ctrl.Result, error) {
+	meta.SetStatusCondition(
+		&browser.Status.Conditions,
+		metav1.Condition{Type: typeAvailableBrowser,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "Reconciling",
+			Message: "Starting reconciliation",
+		})
 
 	if err := r.Status().Update(ctx, browser); err != nil {
 		log.Error(err, "2 Failed to update Browser status 1")
@@ -519,7 +556,11 @@ func (r *BrowserReconciler) handleNoConditions(ctx context.Context, browser *cor
 	return ctrl.Result{Requeue: true}, nil
 }
 
-func (r *BrowserReconciler) handleNoFinalizers(ctx context.Context, browser *corev1alpha1.Browser, log *logr.Logger) (ctrl.Result, error) {
+func (r *BrowserReconciler) handleNoFinalizers(
+	ctx context.Context,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+) (ctrl.Result, error) {
 	log.Info("Adding Finalizer for Browser")
 	if ok := controllerutil.AddFinalizer(browser, browserFinalizer); !ok {
 		err := fmt.Errorf("finalizer for Browser was not added")
