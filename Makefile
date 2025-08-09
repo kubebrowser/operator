@@ -117,12 +117,14 @@ build-browser-api: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
+	NAMESPACE="kubebrowser" \
 	SERVICE_ACCOUNT_NAME="admin-sa" \
 	BROWSER_MANAGER_IMAGE="${BROWSER_MANAGER_IMAGE}" \
 	BROWSER_API_IMAGE="${BROWSER_API_IMAGE}" \
 	BROWSER_IMAGE="${BROWSER_IMAGE}" \
 	CONSOLE_PLUGIN_IMAGE="${CONSOLE_PLUGIN_IMAGE}" \
 	CONSOLE_PLUGIN_NAME="kubebrowser-plugin" \
+	ENABLE_WEBHOOKS=false \
 	go run ./cmd/system-manager/system-manager.go
 
 run-browser-manager: manifests generate fmt vet ## Run a controller from your host.

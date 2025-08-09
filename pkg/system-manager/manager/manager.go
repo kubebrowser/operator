@@ -25,6 +25,7 @@ import (
 
 	corev1alpha1 "github.com/kubebrowser/operator/api/v1alpha1"
 	"github.com/kubebrowser/operator/pkg/system-manager/controller"
+	webhookv1alpha1 "github.com/kubebrowser/operator/pkg/system-manager/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -213,6 +214,13 @@ func (manager *systemManager) Run() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BrowserSystem")
 		os.Exit(1)
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1alpha1.SetupBrowserSystemWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "BrowserSystem")
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:builder
 

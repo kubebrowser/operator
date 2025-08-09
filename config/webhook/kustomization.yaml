@@ -1,0 +1,15 @@
+resources:
+- manifests.yaml
+- service.yaml
+
+configurations:
+- kustomizeconfig.yaml
+
+patches:
+- path: inject_ca_patch.yaml
+  target:
+    kind: ValidatingWebhookConfiguration
+
+- path: inject_ca_patch.yaml
+  target:
+    kind: MutatingWebhookConfiguration
