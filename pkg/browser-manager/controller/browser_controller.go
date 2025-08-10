@@ -178,19 +178,22 @@ func (r *BrowserReconciler) deploymentForBrowser(
 		replicas = 0
 	}
 
+	targetLabels := map[string]string{"app": browser.Name, "component": "browser"}
+
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      browser.Name,
 			Namespace: browser.Namespace,
+			Labels:    ls,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: ls,
+				MatchLabels: targetLabels,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: ls,
+					Labels: targetLabels,
 				},
 				Spec: corev1.PodSpec{
 					SecurityContext: &corev1.PodSecurityContext{
@@ -270,13 +273,16 @@ func (r *BrowserReconciler) serviceForBrowser(
 	browser *corev1alpha1.Browser) (*corev1.Service, error) {
 	ls := labelsForBrowser(browser.Name)
 
+	targetLabels := map[string]string{"app": browser.Name, "component": "browser"}
+
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      browser.Name,
 			Namespace: browser.Namespace,
+			Labels:    ls,
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: ls,
+			Selector: targetLabels,
 			Ports: []corev1.ServicePort{
 				{Name: "browser", TargetPort: intstr.FromInt(utils.BrowserPortNumber), Port: utils.BrowserPortNumber},
 				{Name: "vnc", TargetPort: intstr.FromInt(utils.VNCPortNumber), Port: utils.VNCPortNumber},

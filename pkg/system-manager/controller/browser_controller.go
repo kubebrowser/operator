@@ -59,20 +59,24 @@ func (r *BrowserSystemReconciler) getBrowserControllerDeployment(
 	if err != nil {
 		return nil, err
 	}
+	name := getBrowserControllerName(system.Name)
+
+	targetLabels := map[string]string{"app": name, "component": ForController}
 
 	terminationGracePeriod := int64(10)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getBrowserControllerName(system.Name),
+			Name:      name,
 			Namespace: system.Namespace,
+			Labels:    ls,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: ls,
+				MatchLabels: targetLabels,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: ls,
+					Labels: targetLabels,
 				},
 				Spec: corev1.PodSpec{
 					TerminationGracePeriodSeconds: &terminationGracePeriod,
