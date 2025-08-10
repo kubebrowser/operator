@@ -95,6 +95,7 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 		"page-navigate",
 		"page-goback",
 		"page-goforward",
+		"page-reset",
 	}
 
 	if !slices.Contains(validKinds, actionData.Kind) {
@@ -130,6 +131,7 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	fmt.Printf("Executing '%s' on browser '%s' in namespace '%s'\n", actionData.Kind, name, namespace)
 	resp, err := http.Post(browserServerUrl(name, namespace), "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		fmt.Println("ERROR", err)

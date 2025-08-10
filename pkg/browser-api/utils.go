@@ -31,7 +31,7 @@ func browserServerUrl(name string, namespace string) string {
 		return "http://localhost:3000/action"
 	}
 
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local:3000/action", name, namespace)
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:3000/action", name, namespace)
 }
 
 func browserVncUrl(name string, namespace string) string {
@@ -40,5 +40,5 @@ func browserVncUrl(name string, namespace string) string {
 		return "localhost:15900"
 	}
 
-	return fmt.Sprintf("%s.%s.svc.cluster.local:5900", name, namespace)
+	return fmt.Sprintf("%s.%s.svc.cluster.local.:5900", name, namespace)
 }
