@@ -40,7 +40,7 @@ spec:
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
-          image: controller:latest
+          image: SYSTEM_MANAGER_IMAGE
           name: manager
           ports: []
           env:
@@ -53,15 +53,15 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: BROWSER_MANAGER_IMAGE
-              value: quay.io/mohamedf0/browser-manager:latest
+              value: BROWSER_MANAGER_IMAGE
             - name: BROWSER_API_IMAGE
-              value: quay.io/mohamedf0/browser-api:latest
+              value: BROWSER_API_IMAGE
             - name: BROWSER_IMAGE
-              value: quay.io/mohamedf0/browser-server:latest
+              value: BROWSER_IMAGE
+            - name: CONSOLE_PLUGIN_IMAGE
+              value: CONSOLE_PLUGIN_IMAGE
             - name: CONSOLE_PLUGIN_NAME
               value: kubebrowser-plugin
-            - name: CONSOLE_PLUGIN_IMAGE
-              value: quay.io/mohamedf0/kubebrowser-console-plugin:latest
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

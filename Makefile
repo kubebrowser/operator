@@ -1,12 +1,11 @@
-# Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+#
+SYSTEM_MANAGER_IMAGE = ghcr.io/kubebrowser/system-manager:0.0.1
+BROWSER_MANAGER_IMAGE = ghcr.io/kubebrowser/browser-manager:0.0.1
+BROWSER_API_IMAGE = ghcr.io/kubebrowser/browser-api:0.0.1
+BROWSER_IMAGE = ghcr.io/kubebrowser/browser-server:0.0.1
+CONSOLE_PLUGIN_IMAGE = ghcr.io/kubebrowser/console-plugin:0.0.1
 
-SYSTEM_MANAGER_IMAGE = quay.io/mohamedf0/kubebrowser-system:latest
-BROWSER_MANAGER_IMAGE = quay.io/mohamedf0/browser-manager:latest
-BROWSER_API_IMAGE = quay.io/mohamedf0/browser-api:latest
-BROWSER_IMAGE = quay.io/mohamedf0/browser-server:latest
-CONSOLE_PLUGIN_IMAGE = quay.io/mohamedf0/kubebrowser-console-plugin:latest
-
+SET_IMAGES = $(YQ) '.spec.template.spec.containers[] |= (select(.name=="manager").image="${SYSTEM_MANAGER_IMAGE}") |= .env[] |= (select(.name=="BROWSER_MANAGER_IMAGE").value="${BROWSER_MANAGER_IMAGE}") |= (select(.name=="BROWSER_API_IMAGE").value="${BROWSER_API_IMAGE}") |= (select(.name=="BROWSER_IMAGE").value="${BROWSER_IMAGE}") |= (select(.name=="CONSOLE_PLUGIN_IMAGE").value="${CONSOLE_PLUGIN_IMAGE}")'
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -175,10 +174,9 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	rm Dockerfile.cross
 
 .PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+build-installer: manifests generate yq ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${SYSTEM_MANAGER_IMAGE}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
+	$(KUSTOMIZE) build config/default | $(SET_IMAGES) > dist/install.yaml
 
 ##@ Deployment
 
@@ -195,9 +193,8 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${SYSTEM_MANAGER_IMAGE}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+deploy: manifests kustomize yq ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build config/default | $(SET_IMAGES) | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -270,3 +267,66 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
+
+.PHONY: yq
+YQ ?= $(LOCALBIN)/yq
+yq: ## Download yq locally if necessary.
+ifeq (,$(wildcard $(YQ)))
+ifeq (, $(shell which yq 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(YQ)) ;\
+	echo "downloading yq package" ;\
+	curl -sSLo $(YQ) https://github.com/mikefarah/yq/releases/latest/download/yq_$$(go env GOOS)_$$(go env GOARCH)  ;\
+	chmod +x $(YQ) ;\
+	}
+else
+YQ = $(shell which yq)
+endif
+endif
+
+
+.PHONY: operator-sdk
+OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
+operator-sdk: ## Download operator-sdk locally if necessary.
+ifeq (,$(wildcard $(OPERATOR_SDK)))
+ifeq (, $(shell which operator-sdk 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(OPERATOR_SDK)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+	chmod +x $(OPERATOR_SDK) ;\
+	}
+else
+OPERATOR_SDK = $(shell which operator-sdk)
+endif
+endif
+
+# CHANNELS define the bundle channels used in the bundle.
+# Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
+# To re-generate a bundle for other specific channels without changing the standard setup, you can:
+# - use the CHANNELS as arg of the bundle target (e.g make bundle CHANNELS=candidate,fast,stable)
+# - use environment variables to overwrite this value (e.g export CHANNELS="candidate,fast,stable")
+ifneq ($(origin CHANNELS), undefined)
+BUNDLE_CHANNELS := --channels=$(CHANNELS)
+endif
+
+# DEFAULT_CHANNEL defines the default channel used in the bundle.
+# Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
+# To re-generate a bundle for any other default channel without changing the default setup, you can:
+# - use the DEFAULT_CHANNEL as arg of the bundle target (e.g make bundle DEFAULT_CHANNEL=stable)
+# - use environment variables to overwrite this value (e.g export DEFAULT_CHANNEL="stable")
+ifneq ($(origin DEFAULT_CHANNEL), undefined)
+BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
+endif
+BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
+
+BUNDLE_VERSION=$(VERSION)
+BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
+BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(BUNDLE_VERSION) $(BUNDLE_METADATA_OPTS)  --package kubebrowser
+
+.PHONY: bundle
+bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
+	$(KUSTOMIZE) build config/manifests | $(SET_IMAGES) | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
+	$(OPERATOR_SDK) bundle validate ./bundle

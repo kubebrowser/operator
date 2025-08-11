@@ -29,3 +29,8 @@ go.work
 
 local
 .DS_Store
+
+dist
+
+bundle
+bundle.Dockerfile
