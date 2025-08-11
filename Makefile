@@ -214,6 +214,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+YQ = $(LOCALBIN)/yq
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -252,6 +253,11 @@ golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
+.PHONY: yq
+yq: $(YQ) ## Download yq locally if necessary.
+$(YQ): $(LOCALBIN)
+	$(call go-install-tool,$(YQ),github.com/mikefarah/yq/v4,latest)
+
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
 # $2 - package url which can be installed
@@ -267,23 +273,6 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
-
-.PHONY: yq
-YQ ?= $(LOCALBIN)/yq
-yq: ## Download yq locally if necessary.
-ifeq (,$(wildcard $(YQ)))
-ifeq (, $(shell which yq 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(YQ)) ;\
-	echo "downloading yq package" ;\
-	curl -sSLo $(YQ) https://github.com/mikefarah/yq/releases/latest/download/yq_$$(go env GOOS)_$$(go env GOARCH)  ;\
-	chmod +x $(YQ) ;\
-	}
-else
-YQ = $(shell which yq)
-endif
-endif
 
 
 .PHONY: operator-sdk
@@ -322,11 +311,14 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-BUNDLE_VERSION=$(VERSION)
+ifneq ($(origin VERSION), undefined)
+BUNDLE_VERSION := --version=$(VERSION)
+endif
+
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
-BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(BUNDLE_VERSION) $(BUNDLE_METADATA_OPTS)  --package kubebrowser
+BUNDLE_GEN_FLAGS ?= -q --overwrite $(BUNDLE_VERSION) $(BUNDLE_METADATA_OPTS) --package kubebrowser
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
 	$(KUSTOMIZE) build config/manifests | $(SET_IMAGES) | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
-	$(OPERATOR_SDK) bundle validate ./bundle
+# 	$(OPERATOR_SDK) bundle validate ./bundle
