@@ -1,4 +1,5 @@
 #
+BUNDLE_IMAGE = ghcr.io/kubebrowser/operator-bundle
 SYSTEM_MANAGER_IMAGE = ghcr.io/kubebrowser/system-manager:0.0.1
 BROWSER_MANAGER_IMAGE = ghcr.io/kubebrowser/browser-manager:0.0.1
 BROWSER_API_IMAGE = ghcr.io/kubebrowser/browser-api:0.0.1
@@ -300,20 +301,15 @@ endif
 # - use environment variables to overwrite this value (e.g export CHANNELS="candidate,fast,stable")
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
+else
+BUNDLE_CHANNELS := --channels=alpha
 endif
 
-# DEFAULT_CHANNEL defines the default channel used in the bundle.
-# Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
-# To re-generate a bundle for any other default channel without changing the default setup, you can:
-# - use the DEFAULT_CHANNEL as arg of the bundle target (e.g make bundle DEFAULT_CHANNEL=stable)
-# - use environment variables to overwrite this value (e.g export DEFAULT_CHANNEL="stable")
-ifneq ($(origin DEFAULT_CHANNEL), undefined)
-BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
-endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
 ifneq ($(origin VERSION), undefined)
 BUNDLE_VERSION := --version=$(VERSION)
+BUNDLE_IMAGE := $(BUNDLE_IMAGE):$(VERSION)
 endif
 
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
@@ -322,4 +318,11 @@ BUNDLE_GEN_FLAGS ?= -q --overwrite $(BUNDLE_VERSION) $(BUNDLE_METADATA_OPTS) --p
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
 	$(KUSTOMIZE) build config/manifests | $(SET_IMAGES) | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
-# 	$(OPERATOR_SDK) bundle validate ./bundle
+	$(OPERATOR_SDK) bundle validate ./bundle
+
+
+docker-build-bundle:
+	docker build --platform=${PLATFORMS} -t ${BUNDLE_IMAGE} -f bundle.Dockerfile .
+  
+docker-push-bundle:
+	docker push ${BUNDLE_IMAGE}
