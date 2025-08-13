@@ -48,10 +48,12 @@ type BrowserSystemStatus struct {
 	Phase string `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase"`
 }
 
+// Configures the operator and deploys resources needed for running Browsers
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:resource:scope=Namespaced,shortName={bs}
 // BrowserSystem is the Schema for the browsersystems API.
 type BrowserSystem struct {
 	metav1.TypeMeta   `json:",inline"`

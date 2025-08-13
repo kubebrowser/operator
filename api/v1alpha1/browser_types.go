@@ -51,6 +51,7 @@ type BrowserStatus struct {
 	DeploymentStatus string `json:"deploymentStatus,omitempty" protobuf:"bytes,1,opt,name=deploymentStatus"`
 }
 
+// Deploys a browser instance
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:subresource:action
@@ -58,7 +59,7 @@ type BrowserStatus struct {
 // +kubebuilder:printcolumn:name="Started",type=boolean,JSONPath=`.spec.started`
 // +kubebuilder:printcolumn:name="Deployment",type=string,JSONPath=`.status.deploymentStatus`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-
+// +kubebuilder:resource:scope=Namespaced,shortName={br}
 // Browser is the Schema for the browsers API
 type Browser struct {
 	metav1.TypeMeta   `json:",inline"`

@@ -315,10 +315,22 @@ endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 BUNDLE_GEN_FLAGS ?= -q --overwrite $(BUNDLE_VERSION) $(BUNDLE_METADATA_OPTS) --package kubebrowser
 
+define base64-convert
+	base64 -w0 $(shell [ "$$(uname)" = "Darwin" ] && echo -i) $1
+endef
+
+BROWSER_CRD_DESCRIPTION=Deploys a browser instance
+BROWSERSYSTEM_CRD_DESCRIPTION=Configures resources needed for running Browsers
+
+# set related images also
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and metadata, then validate generated files.
 	$(KUSTOMIZE) build config/manifests | $(SET_IMAGES) | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
-	$(OPERATOR_SDK) bundle validate ./bundle
+	LOGO=$$($(call base64-convert,./misc/logo.svg)); \
+	EXAMPLES=$$($(YQ) ".metadata.annotations.alm-examples" ./config/manifests/bases/clusterserviceversion.yaml | sed 's/"/\\"/g'); \
+	$(YQ) ".spec.icon[0].base64data=\"$$LOGO\" | .metadata.annotations.containerImage=\"${SYSTEM_MANAGER_IMAGE}\" | .metadata.annotations.alm-examples=\"$$EXAMPLES\"" -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
+	$(YQ) '.spec.customresourcedefinitions.owned[] |= (select(.kind=="Browser").description="${BROWSER_CRD_DESCRIPTION}") |= (select(.kind=="BrowserSystem").description="${BROWSERSYSTEM_CRD_DESCRIPTION}")'  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
+	sleep 1 && $(OPERATOR_SDK) bundle validate ./bundle
 
 
 docker-build-bundle:

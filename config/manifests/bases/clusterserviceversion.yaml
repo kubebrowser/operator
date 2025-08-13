@@ -2,20 +2,35 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
   annotations:
-    alm-examples: "[]"
+    alm-examples: '[{"apiVersion":"core.kubebrowser.io/v1alpha1","kind":"BrowserSystem","metadata":{"name":"sample"},"spec":{"enableApiService":true,"enableConsolePlugin":true}},{"apiVersion":"core.kubebrowser.io/v1alpha1","kind":"Browser","metadata":{"name":"sample"},"spec":{"started":false,"browserResources":{"requests":{"cpu":"100m","memory":"500Mi"}}}}]'
     capabilities: Basic Install
+    description: "Provides integrated web browsing functionality"
     operators.operatorframework.io/builder: operator-sdk-v1.40.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+    operatorframework.io/suggested-namespace: kubebrowser
+    operatorframework.io/initialization-resource: '{"apiVersion": "core.kubebrowser.io/v1alpha1","kind": "BrowserSystem","metadata": {"name": "browsersystem"},"spec": {}}'
+    operators.openshift.io/infrastructure-features: '["disconnected", "proxy-aware"]'
+    features.operators.openshift.io/disconnected: "true"
+    features.operators.openshift.io/proxy-aware: "true"
+    categories: Developer Tools,OpenShift Optional
+    repository: https://github.com/kubebrowser/operator
+    support: None
+    containerImage: x
+  labels:
+    operatorframework.io/os.linux: supported
+    operatorframework.io/arch.amd64: supported
+    operatorframework.io/arch.arm64: supported
   name: kubebrowser.v0.0.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions: {}
-  description: Custom description
-  displayName: My Operator
+  description: |
+    # My description Yeeer
+  displayName: KubeBrowser Operator
   icon:
     - base64data: ""
-      mediatype: ""
+      mediatype: image/svg+xml
   install:
     spec:
       deployments: []
@@ -32,13 +47,14 @@ spec:
   keywords:
     - operator
   links:
-    - name: Operator
-      url: https://operator.domain
+    - name: Github
+      url: https://github.com/kubebrowser
   maintainers:
-    - email: your@email.com
-      name: Maintainer Name
+    - email: devmohamed2000@email.com
+      name: Mohamed Fall
   maturity: alpha
   provider:
-    name: Provider Name
-    url: https://your.domain
+    name: Kubebrowser
+    url: https://github.com/kubebrowser
   version: 0.0.1
+  minKubeVersion: 1.23.0

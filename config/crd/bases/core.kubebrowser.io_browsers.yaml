@@ -11,6 +11,8 @@ spec:
     kind: Browser
     listKind: BrowserList
     plural: browsers
+    shortNames:
+    - br
     singular: browser
   scope: Namespaced
   versions:
@@ -27,7 +29,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Browser is the Schema for the browsers API
+        description: |-
+          Deploys a browser instance
+          Browser is the Schema for the browsers API
         properties:
           apiVersion:
             description: |-

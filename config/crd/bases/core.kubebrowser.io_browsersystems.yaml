@@ -11,6 +11,8 @@ spec:
     kind: BrowserSystem
     listKind: BrowserSystemList
     plural: browsersystems
+    shortNames:
+    - bs
     singular: browsersystem
   scope: Namespaced
   versions:
@@ -24,7 +26,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: BrowserSystem is the Schema for the browsersystems API.
+        description: |-
+          Configures the operator and deploys resources needed for running Browsers
+          BrowserSystem is the Schema for the browsersystems API.
         properties:
           apiVersion:
             description: |-
