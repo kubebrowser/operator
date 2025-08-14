@@ -133,7 +133,7 @@ run-browser-manager: manifests generate fmt vet ## Run a controller from your ho
 run-browser-api: manifests generate fmt vet ## Run a controller from your host.
 	ENVIRONMENT="development" go run ./cmd/browser-api/browser-api.go
 
-PLATFORMS ?= linux/amd64
+PLATFORMS ?= linux/amd64,linux/arm64
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
@@ -332,8 +332,8 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	$(YQ) ".spec.icon[0].base64data=\"$$LOGO\" | .metadata.annotations.containerImage=\"${SYSTEM_MANAGER_IMAGE}\" | .metadata.annotations.alm-examples=\"$$EXAMPLES\"" -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
 	$(YQ) '.spec.customresourcedefinitions.owned[] |= (select(.kind=="Browser").description="${BROWSER_CRD_DESCRIPTION}") |= (select(.kind=="BrowserSystem").description="${BROWSERSYSTEM_CRD_DESCRIPTION}")'  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
 	$(YQ) ".spec.description=\"$$README\""  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
+	$(YQ) '.spec.relatedImages=[{"name": "manager", "image": "${SYSTEM_MANAGER_IMAGE}"}, {"name": "browser-api", "image": "${BROWSER_API_IMAGE}"}, {"name": "browser-manager", "image": "${BROWSER_MANAGER_IMAGE}"}, {"name": "console-plugin", "image": "${CONSOLE_PLUGIN_IMAGE}"}]'  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
 	sleep 1 && $(OPERATOR_SDK) bundle validate ./bundle
-
 
 docker-build-bundle:
 	docker build --platform=${PLATFORMS} -t ${BUNDLE_IMAGE} -f bundle.Dockerfile .
