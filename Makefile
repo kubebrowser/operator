@@ -328,8 +328,10 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	$(KUSTOMIZE) build config/manifests | $(SET_IMAGES) | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	LOGO=$$($(call base64-convert,./misc/logo.svg)); \
 	EXAMPLES=$$($(YQ) ".metadata.annotations.alm-examples" ./config/manifests/bases/clusterserviceversion.yaml | sed 's/"/\\"/g'); \
+	README=$$(cat ./misc/csv.md); \
 	$(YQ) ".spec.icon[0].base64data=\"$$LOGO\" | .metadata.annotations.containerImage=\"${SYSTEM_MANAGER_IMAGE}\" | .metadata.annotations.alm-examples=\"$$EXAMPLES\"" -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
 	$(YQ) '.spec.customresourcedefinitions.owned[] |= (select(.kind=="Browser").description="${BROWSER_CRD_DESCRIPTION}") |= (select(.kind=="BrowserSystem").description="${BROWSERSYSTEM_CRD_DESCRIPTION}")'  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
+	$(YQ) ".spec.description=\"$$README\""  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
 	sleep 1 && $(OPERATOR_SDK) bundle validate ./bundle
 
 
