@@ -2,7 +2,7 @@
 
 Operator for configuring and managing Kubebrowser resources.
 
-
+![screenshot](./misc/screenshot.png)
 
 ## Overview
 
@@ -12,8 +12,6 @@ Operator for configuring and managing Kubebrowser resources.
 - A sidecar REST API allows programmatic remote control of the browser.
 - Without this operator, testing a service typically required creating a `Route`, exec’ing into another pod and running `curl`, or setting up a port-forward. Now you can simply open a browser from inside the cluster.
 
-
-
 ## Purpose
 
 The Browser Operator makes it easy to:
@@ -22,8 +20,6 @@ The Browser Operator makes it easy to:
 - Validate network connectivity across namespaces
 - Verify access to external services
 - Debug routing, DNS, and access issues directly from the cluster’s perspective
-
-
 
 ## Components
 
@@ -43,25 +39,19 @@ Here are the platforms currently supported:
 
 - OpenShift 4.19+ Only
 
-
-
 ## Running
 
 To run this locally
 
 ```bash
-make install run 
+make install run
 ```
-
-
 
 To deploy locally
 
 ```bash
 make deploy
 ```
-
-
 
 ## Contributing
 
@@ -70,8 +60,6 @@ You can contribute by:
 - Raising any issues you find using the Operator
 - Submitting a patch or opening a PR
 - Requesting changes or features
-
-
 
 ## Licensing
 
