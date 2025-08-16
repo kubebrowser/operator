@@ -86,6 +86,21 @@ func (r *BrowserSystemReconciler) reconcileBrowserApi(
 			return ReconciledError, err
 		}
 		return ReconciledUpdated, nil
+	} else {
+		// deployment is here rightfully
+		desiredApiImage, err := getBrowserAPIImage()
+		if err != nil {
+			return ReconciledError, err
+		}
+
+		if browserApiDeployment.Spec.Template.Spec.Containers[0].Image != desiredApiImage {
+			browserApiDeployment.Spec.Template.Spec.Containers[0].Image = desiredApiImage
+			if err := r.Update(ctx, browserApiDeployment); err != nil {
+				log.Error(err, "failed to update browser api deployment image")
+				return ReconciledError, err
+			}
+			return ReconciledUpdated, nil
+		}
 	}
 	/* browser-api Deployment	*/
 

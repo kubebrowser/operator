@@ -43,6 +43,37 @@ func (r *BrowserSystemReconciler) reconcileBrowserController(
 		}
 	}
 
+	desiredControllerImage, err := getBrowserControllerImage()
+	if err != nil {
+		return ReconciledError, err
+	}
+
+	if browserControllerDeployment.Spec.Template.Spec.Containers[0].Image != desiredControllerImage {
+		browserControllerDeployment.Spec.Template.Spec.Containers[0].Image = desiredControllerImage
+		if err := r.Update(ctx, browserControllerDeployment); err != nil {
+			log.Error(err, "failed to update browser controller deployment image")
+			return ReconciledError, err
+		}
+		return ReconciledUpdated, nil
+	}
+
+	desiredBrowserImage, err := getBrowserImage()
+	if err != nil {
+		return ReconciledError, err
+	}
+
+	for i, containerEnv := range browserControllerDeployment.Spec.Template.Spec.Containers[0].Env {
+		if containerEnv.Name == "BROWSER_IMAGE" && containerEnv.Value != desiredBrowserImage {
+			browserControllerDeployment.Spec.Template.Spec.Containers[0].Env[i].Value = desiredBrowserImage
+			browserControllerDeployment.Spec.Template.Spec.Containers[0].Image = desiredControllerImage
+			if err := r.Update(ctx, browserControllerDeployment); err != nil {
+				log.Error(err, "failed to update browser controller deployment env")
+				return ReconciledError, err
+			}
+			return ReconciledUpdated, nil
+		}
+	}
+
 	return ReconciledOk, nil
 }
 

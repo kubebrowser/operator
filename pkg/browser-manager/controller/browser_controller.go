@@ -122,11 +122,20 @@ func (r *BrowserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if *deployment.Spec.Replicas != expectedReplicas {
-		return r.handleDeploymentRepliasMismatch(ctx, browser, &log, deployment, &expectedReplicas, req.NamespacedName)
+		return r.handleDeploymentReplicasMismatch(ctx, browser, &log, deployment, &expectedReplicas, req.NamespacedName)
 	}
 
 	if !utils.AreResourcesEqual(browser.Spec.BrowserResources, deployment.Spec.Template.Spec.Containers[0].Resources) {
 		return r.handleDeploymentResourcesMismatch(ctx, browser, &log, deployment, req.NamespacedName)
+	}
+
+	desiredImage, err := imageForBrowser()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if deployment.Spec.Template.Spec.Containers[0].Image != desiredImage {
+		return r.handleDeploymentImageMismatch(ctx, browser, &log, deployment, desiredImage, req.NamespacedName)
 	}
 
 	if err := r.Get(ctx, req.NamespacedName, browser); err != nil {
@@ -469,7 +478,7 @@ func (r *BrowserReconciler) handleFailedToGetDeployment(
 
 }
 
-func (r *BrowserReconciler) handleDeploymentRepliasMismatch(
+func (r *BrowserReconciler) handleDeploymentReplicasMismatch(
 	ctx context.Context,
 	browser *corev1alpha1.Browser,
 	log *logr.Logger,
@@ -533,6 +542,43 @@ func (r *BrowserReconciler) handleDeploymentResourcesMismatch(
 
 		if err := r.Status().Update(ctx, browser); err != nil {
 			log.Error(err, "28 Failed to update Browser status 9")
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *BrowserReconciler) handleDeploymentImageMismatch(
+	ctx context.Context,
+	browser *corev1alpha1.Browser,
+	log *logr.Logger,
+	deployment *appsv1.Deployment,
+	expectedImage string,
+	key client.ObjectKey,
+) (ctrl.Result, error) {
+	deployment.Spec.Template.Spec.Containers[0].Image = expectedImage
+
+	if err := r.Update(ctx, deployment); err != nil {
+		log.Error(err, "19.2 Failed to update Deployment",
+			"Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
+
+		if err := r.Get(ctx, key, browser); err != nil {
+			log.Error(err, "20.2 Failed to re-fetch browser")
+			return ctrl.Result{}, err
+		}
+
+		meta.SetStatusCondition(&browser.Status.Conditions, metav1.Condition{Type: typeAvailableBrowser,
+			Status: metav1.ConditionFalse, Reason: "Starting",
+			Message: fmt.Sprintf("Failed to start browser (%s): (%s)", browser.Name, err)})
+
+		// updating deployment so update status to progressing
+		browser.Status.DeploymentStatus = utils.DeploymentStatusProgressing
+
+		if err := r.Status().Update(ctx, browser); err != nil {
+			log.Error(err, "21 Failed to update Browser status 7")
 			return ctrl.Result{}, err
 		}
 

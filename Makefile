@@ -1,12 +1,12 @@
 #
 BUNDLE_IMAGE = ghcr.io/kubebrowser/operator-bundle
-SYSTEM_MANAGER_IMAGE = ghcr.io/kubebrowser/system-manager:0.0.1
-BROWSER_MANAGER_IMAGE = ghcr.io/kubebrowser/browser-manager:0.0.1
+SYSTEM_MANAGER_IMAGE = ghcr.io/kubebrowser/system-manager:0.0.2
+BROWSER_MANAGER_IMAGE = ghcr.io/kubebrowser/browser-manager:0.0.2
 BROWSER_API_IMAGE = ghcr.io/kubebrowser/browser-api:0.0.1
-BROWSER_IMAGE = ghcr.io/kubebrowser/browser-server:0.0.1
-CONSOLE_PLUGIN_IMAGE = ghcr.io/kubebrowser/console-plugin:0.0.1
+BROWSER_IMAGE = ghcr.io/kubebrowser/browser-server:0.0.2
+CONSOLE_PLUGIN_IMAGE = ghcr.io/kubebrowser/console-plugin:0.0.2
 
-SET_IMAGES = $(YQ) '.spec.template.spec.containers[] |= (select(.name=="manager").image="${SYSTEM_MANAGER_IMAGE}") |= .env[] |= (select(.name=="BROWSER_MANAGER_IMAGE").value="${BROWSER_MANAGER_IMAGE}") |= (select(.name=="BROWSER_API_IMAGE").value="${BROWSER_API_IMAGE}") |= (select(.name=="BROWSER_IMAGE").value="${BROWSER_IMAGE}") |= (select(.name=="CONSOLE_PLUGIN_IMAGE").value="${CONSOLE_PLUGIN_IMAGE}")'
+SET_IMAGES = $(YQ) 'select(.kind=="Deployment").spec.template.spec.containers[] |= (select(.name=="manager").image="${SYSTEM_MANAGER_IMAGE}") |= .env[] |= (select(.name=="BROWSER_MANAGER_IMAGE").value="${BROWSER_MANAGER_IMAGE}") |= (select(.name=="BROWSER_API_IMAGE").value="${BROWSER_API_IMAGE}") |= (select(.name=="BROWSER_IMAGE").value="${BROWSER_IMAGE}") |= (select(.name=="CONSOLE_PLUGIN_IMAGE").value="${CONSOLE_PLUGIN_IMAGE}")'
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -133,7 +133,7 @@ run-browser-manager: manifests generate fmt vet ## Run a controller from your ho
 run-browser-api: manifests generate fmt vet ## Run a controller from your host.
 	ENVIRONMENT="development" go run ./cmd/browser-api/browser-api.go
 
-PLATFORMS ?= linux/amd64,linux/arm64
+PLATFORMS ?= linux/amd64
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
@@ -340,3 +340,24 @@ docker-build-bundle:
   
 docker-push-bundle:
 	docker push ${BUNDLE_IMAGE}
+
+
+# can't use yet because different platform will have different hashes. 
+set-images-hash: 
+	$(eval SYSTEM_MANAGER_IMAGE := $(call get_image_hash,$(SYSTEM_MANAGER_IMAGE)))
+	$(eval BROWSER_MANAGER_IMAGE := $(call get_image_hash,$(BROWSER_MANAGER_IMAGE)))
+	$(eval BROWSER_API_IMAGE := $(call get_image_hash,$(BROWSER_API_IMAGE)))
+	$(eval BROWSER_IMAGE := $(call get_image_hash,$(BROWSER_IMAGE)))
+	$(eval CONSOLE_PLUGIN_IMAGE := $(call get_image_hash,$(CONSOLE_PLUGIN_IMAGE)))
+
+define get_image_hash
+	$(shell \
+		if command -v podman >/dev/null 2>&1; then \
+			podman image inspect --format '{{.Digest}}' $(1); \
+		elif command -v docker >/dev/null 2>&1; then \
+			docker image inspect --format '{{index .RepoDigests 0}}' $(1); \
+		else \
+			echo "Error: neither podman nor docker found" >&2; exit 1; \
+		fi \
+	)
+endef

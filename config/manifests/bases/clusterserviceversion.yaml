@@ -3,7 +3,7 @@ kind: ClusterServiceVersion
 metadata:
   annotations:
     alm-examples: '[{"apiVersion":"core.kubebrowser.io/v1alpha1","kind":"BrowserSystem","metadata":{"name":"sample"},"spec":{"enableApiService":true,"enableConsolePlugin":true}},{"apiVersion":"core.kubebrowser.io/v1alpha1","kind":"Browser","metadata":{"name":"sample"},"spec":{"started":false,"browserResources":{"requests":{"cpu":"100m","memory":"500Mi"}}}}]'
-    capabilities: Basic Install
+    capabilities: Seamless Upgrades
     description: "Provides integrated web browsing functionality"
     operators.operatorframework.io/builder: operator-sdk-v1.40.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
@@ -12,7 +12,7 @@ metadata:
     operators.openshift.io/infrastructure-features: '["disconnected", "proxy-aware"]'
     features.operators.openshift.io/disconnected: "true"
     features.operators.openshift.io/proxy-aware: "true"
-    categories: Developer Tools,OpenShift Optional
+    categories: Developer Tools
     repository: https://github.com/kubebrowser/operator
     support: None
     containerImage: x
@@ -44,7 +44,11 @@ spec:
     - supported: true
       type: AllNamespaces
   keywords:
-    - operator
+    - browser
+    - web browser
+    - kubebrowser
+    - chromium
+    - testing
   links:
     - name: Github
       url: https://github.com/kubebrowser

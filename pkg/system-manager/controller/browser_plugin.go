@@ -50,6 +50,20 @@ func (r *BrowserSystemReconciler) reconcileBrowserPlugin(
 			return ReconciledError, err
 		}
 		return ReconciledUpdated, nil
+	} else {
+		// deployment is here rightfully
+		desiredPluginImage, err := getConsolePluginImage()
+		if err != nil {
+			return ReconciledError, err
+		}
+		if pluginDeployment.Spec.Template.Spec.Containers[0].Image != desiredPluginImage {
+			pluginDeployment.Spec.Template.Spec.Containers[0].Image = desiredPluginImage
+			if err := r.Update(ctx, pluginDeployment); err != nil {
+				log.Error(err, "failed to update browser plugin deployment image")
+				return ReconciledError, err
+			}
+			return ReconciledUpdated, nil
+		}
 	}
 	/* console-plugin Deployment	*/
 

@@ -98,6 +98,15 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	result, err := r.reconcileBrowserController(ctx, system, &log)
+
+	if result != ReconciledOk && system.Status.Phase != utils.BrowserSystemPhaseProgressing {
+		system.Status.Phase = utils.BrowserSystemPhaseProgressing
+		if err := r.Status().Update(ctx, system); err != nil {
+			log.Error(err, "12 Failed to update browsersystem status")
+			return ctrl.Result{}, err
+		}
+	}
+
 	switch result {
 	case ReconciledError:
 		return ctrl.Result{}, err
@@ -106,11 +115,20 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if err := r.Get(ctx, req.NamespacedName, system); err != nil {
-		log.Error(err, "Failed to re-fetch browser")
+		log.Error(err, "Failed to re-fetch system")
 		return ctrl.Result{}, err
 	}
 
 	result, err = r.reconcileBrowserApi(ctx, system, &log)
+
+	if result != ReconciledOk && system.Status.Phase != utils.BrowserSystemPhaseProgressing {
+		system.Status.Phase = utils.BrowserSystemPhaseProgressing
+		if err := r.Status().Update(ctx, system); err != nil {
+			log.Error(err, "13 Failed to update browsersystem status")
+			return ctrl.Result{}, err
+		}
+	}
+
 	switch result {
 	case ReconciledError:
 		return ctrl.Result{}, err
@@ -119,11 +137,20 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if err := r.Get(ctx, req.NamespacedName, system); err != nil {
-		log.Error(err, "Failed to re-fetch browser")
+		log.Error(err, "Failed to re-fetch system")
 		return ctrl.Result{}, err
 	}
 
 	result, err = r.reconcileBrowserPlugin(ctx, system, &log)
+
+	if result != ReconciledOk && system.Status.Phase != utils.BrowserSystemPhaseProgressing {
+		system.Status.Phase = utils.BrowserSystemPhaseProgressing
+		if err := r.Status().Update(ctx, system); err != nil {
+			log.Error(err, "12 Failed to update browsersystem status")
+			return ctrl.Result{}, err
+		}
+	}
+
 	switch result {
 	case ReconciledError:
 		return ctrl.Result{}, err
@@ -133,7 +160,7 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	/* console-plugin Definition	*/
 
 	if err := r.Get(ctx, req.NamespacedName, system); err != nil {
-		log.Error(err, "Failed to re-fetch browser")
+		log.Error(err, "Failed to re-fetch system")
 		return ctrl.Result{}, err
 	}
 
