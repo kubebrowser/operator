@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,6 +39,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1alpha1 "github.com/kubebrowser/operator/api/v1alpha1"
 	"github.com/kubebrowser/operator/pkg/browser-manager/utils"
+	"github.com/kubebrowser/operator/pkg/imageref"
 )
 
 const browserFinalizer = "core.kubebrowser.io/finalizer"
@@ -250,12 +250,8 @@ func (r *BrowserReconciler) deploymentForBrowser(
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 func labelsForBrowser(browserName string) map[string]string {
 	var imageTag string
-	image, err := imageForBrowser()
-	if err == nil {
-		imageParts := strings.Split(image, ":")
-		if len(imageParts) == 2 {
-			imageTag = imageParts[1]
-		}
+	if image, err := imageForBrowser(); err == nil {
+		imageTag = imageref.VersionLabel(image)
 	}
 	return map[string]string{
 		"app.kubernetes.io/instance":   browserName,
