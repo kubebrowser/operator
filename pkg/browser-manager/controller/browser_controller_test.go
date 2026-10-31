@@ -131,19 +131,20 @@ var _ = Describe("Browser controller", func() {
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := browserReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-
+			// The reconciler handles one step per call (conditions, finalizer,
+			// service, deployment), so reconcile until the Deployment exists.
 			By("Checking if Deployment was successfully created in the reconciliation")
 			Eventually(func(g Gomega) {
+				_, err := browserReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				})
+				g.Expect(err).NotTo(HaveOccurred())
 				found := &appsv1.Deployment{}
 				g.Expect(k8sClient.Get(ctx, typeNamespacedName, found)).To(Succeed())
 			}).Should(Succeed())
 
 			By("Reconciling the custom resource again")
-			_, err = browserReconciler.Reconcile(ctx, reconcile.Request{
+			_, err := browserReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
