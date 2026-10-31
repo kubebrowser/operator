@@ -19,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+//nolint:dupl // same deployment lifecycle as reconcileBrowserApi, candidate for a shared helper
 func (r *BrowserSystemReconciler) reconcileBrowserPlugin(
 	ctx context.Context,
 	system *corev1alpha1.BrowserSystem,

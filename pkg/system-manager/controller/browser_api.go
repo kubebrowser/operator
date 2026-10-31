@@ -24,6 +24,7 @@ import (
 
 var subresourceGV = schema.GroupVersion{Group: "subresource.kubebrowser.io", Version: "v1alpha1"}
 
+//nolint:dupl // same deployment lifecycle as reconcileBrowserPlugin, candidate for a shared helper
 func (r *BrowserSystemReconciler) reconcileBrowserApi(
 	ctx context.Context,
 	system *corev1alpha1.BrowserSystem,

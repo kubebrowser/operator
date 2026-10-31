@@ -44,7 +44,8 @@ const systemFinalizer = "core.kubebrowser.io/finalizer"
 const (
 	// typeAvailableBrowser represents the status of the Deployment reconciliation
 	typeAvailable = "Available"
-	// typeDegradedBrowser represents the status used when the custom resource is deleted and the finalizer operations are yet to occur.
+	// typeDegradedBrowser represents the status used when the custom resource is deleted and
+	// the finalizer operations are yet to occur.
 	typeDegraded = "Degraded"
 )
 
