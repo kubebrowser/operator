@@ -21,6 +21,38 @@ The Browser Operator makes it easy to:
 - Verify access to external services
 - Debug routing, DNS, and access issues directly from the cluster’s perspective
 
+## Usage
+
+After installing the operator, create a `BrowserSystem` (leave `.spec` empty for defaults):
+
+```yaml
+apiVersion: core.kubebrowser.io/v1alpha1
+kind: BrowserSystem
+metadata:
+  name: browsersystem
+  namespace: kubebrowser
+spec:
+  enableApiService: true
+  enableConsolePlugin: true
+```
+
+Then create a `Browser`:
+
+```yaml
+apiVersion: core.kubebrowser.io/v1alpha1
+kind: Browser
+metadata:
+  name: mybrowser
+spec:
+  started: true
+```
+
+`spec.started` controls whether the browser is running (it defaults to `true`). Set it to `false` to stop the browser pod without deleting the `Browser`, and back to `true` to start it again. With the console plugin enabled, open your browser from **Networking -> Browsers** in the web console.
+
+## Uninstalling
+
+> **Warning:** deleting the `BrowserSystem` removes the operator's components **and deletes every `Browser` in the cluster**. Delete or back up the `Browser` resources you want to keep first.
+
 ## Components
 
 - System Operator (this) (under [./pkg/system-manager](./pkg/system-manager))

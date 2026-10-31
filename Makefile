@@ -319,6 +319,9 @@ define base64-convert
 	base64 -w0 $(shell [ "$$(uname)" = "Darwin" ] && echo -i) $1
 endef
 
+# OpenShift versions the bundle supports (OpenShift 4.19 ships Kubernetes 1.32, see minKubeVersion in the CSV).
+OPENSHIFT_VERSIONS=v4.19
+
 BROWSER_CRD_DESCRIPTION=Deploys a browser instance
 BROWSERSYSTEM_CRD_DESCRIPTION=Configures resources needed for running Browsers
 
@@ -333,6 +336,8 @@ bundle: manifests kustomize operator-sdk yq ## Generate bundle manifests and met
 	$(YQ) '.spec.customresourcedefinitions.owned[] |= (select(.kind=="Browser").description="${BROWSER_CRD_DESCRIPTION}") |= (select(.kind=="BrowserSystem").description="${BROWSERSYSTEM_CRD_DESCRIPTION}")'  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
 	$(YQ) ".spec.description=\"$$README\""  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
 	$(YQ) '.spec.relatedImages=[{"name": "manager", "image": "${SYSTEM_MANAGER_IMAGE}"}, {"name": "browser-api", "image": "${BROWSER_API_IMAGE}"}, {"name": "browser-manager", "image": "${BROWSER_MANAGER_IMAGE}"}, {"name": "console-plugin", "image": "${CONSOLE_PLUGIN_IMAGE}"}]'  -i ./bundle/manifests/kubebrowser.clusterserviceversion.yaml; \
+	$(YQ) '.annotations."com.redhat.openshift.versions"="${OPENSHIFT_VERSIONS}"' -i ./bundle/metadata/annotations.yaml; \
+	echo 'LABEL com.redhat.openshift.versions="${OPENSHIFT_VERSIONS}"' >> bundle.Dockerfile; \
 	sleep 1 && $(OPERATOR_SDK) bundle validate ./bundle
 
 docker-build-bundle:
