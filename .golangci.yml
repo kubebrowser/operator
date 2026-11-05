@@ -36,6 +36,9 @@ linters:
           - dupl
           - lll
         path: internal/*
+      - linters:
+          - lll
+        source: "^// \\+kubebuilder:"
     paths:
       - third_party$
       - builtin$
