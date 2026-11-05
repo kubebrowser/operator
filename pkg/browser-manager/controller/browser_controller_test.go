@@ -26,6 +26,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -66,6 +67,8 @@ var _ = Describe("Browser controller", func() {
 			By("Setting the Image ENV VAR which stores the Operand image")
 			err = os.Setenv("BROWSER_IMAGE", "example.com/image:test")
 			Expect(err).NotTo(HaveOccurred())
+			Expect(os.Setenv("BROWSER_API_NAMESPACE", "kubebrowser")).To(Succeed())
+			Expect(os.Setenv("BROWSER_API_NAME", "browsersystem-browser-api")).To(Succeed())
 
 			By("creating the custom resource for the Kind Browser")
 			err = k8sClient.Get(ctx, typeNamespacedName, browser)
@@ -116,6 +119,8 @@ var _ = Describe("Browser controller", func() {
 
 			By("Removing the Image ENV VAR which stores the Operand image")
 			_ = os.Unsetenv("BROWSER_IMAGE")
+			_ = os.Unsetenv("BROWSER_API_NAMESPACE")
+			_ = os.Unsetenv("BROWSER_API_NAME")
 		})
 
 		It("should successfully reconcile a custom resource for Browser", func() {
@@ -142,6 +147,18 @@ var _ = Describe("Browser controller", func() {
 				found := &appsv1.Deployment{}
 				g.Expect(k8sClient.Get(ctx, typeNamespacedName, found)).To(Succeed())
 			}).Should(Succeed())
+
+			By("Checking that only browser-api may reach the browser pod")
+			policy := &networkingv1.NetworkPolicy{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, policy)).To(Succeed())
+			Expect(policy.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", BrowserName))
+			Expect(policy.Spec.Ingress).To(HaveLen(1))
+			Expect(policy.Spec.Ingress[0].From).To(HaveLen(1))
+			Expect(policy.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels).To(
+				HaveKeyWithValue("kubernetes.io/metadata.name", "kubebrowser"))
+			Expect(policy.Spec.Ingress[0].From[0].PodSelector.MatchLabels).To(
+				HaveKeyWithValue("app", "browsersystem-browser-api"))
+			Expect(policy.Spec.Ingress[0].Ports).To(HaveLen(2))
 
 			By("Reconciling the custom resource again")
 			_, err := browserReconciler.Reconcile(ctx, reconcile.Request{

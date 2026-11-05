@@ -9,6 +9,7 @@ import (
 	corev1alpha1 "github.com/kubebrowser/operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,21 +58,18 @@ func (r *BrowserSystemReconciler) reconcileBrowserController(
 		return ReconciledUpdated, nil
 	}
 
-	desiredBrowserImage, err := getBrowserImage()
+	desiredEnv, err := getBrowserControllerEnv(system)
 	if err != nil {
 		return ReconciledError, err
 	}
 
-	for i, containerEnv := range browserControllerDeployment.Spec.Template.Spec.Containers[0].Env {
-		if containerEnv.Name == "BROWSER_IMAGE" && containerEnv.Value != desiredBrowserImage {
-			browserControllerDeployment.Spec.Template.Spec.Containers[0].Env[i].Value = desiredBrowserImage
-			browserControllerDeployment.Spec.Template.Spec.Containers[0].Image = desiredControllerImage
-			if err := r.Update(ctx, browserControllerDeployment); err != nil {
-				log.Error(err, "failed to update browser controller deployment env")
-				return ReconciledError, err
-			}
-			return ReconciledUpdated, nil
+	if !equality.Semantic.DeepEqual(browserControllerDeployment.Spec.Template.Spec.Containers[0].Env, desiredEnv) {
+		browserControllerDeployment.Spec.Template.Spec.Containers[0].Env = desiredEnv
+		if err := r.Update(ctx, browserControllerDeployment); err != nil {
+			log.Error(err, "failed to update browser controller deployment env")
+			return ReconciledError, err
 		}
+		return ReconciledUpdated, nil
 	}
 
 	return ReconciledOk, nil
@@ -86,7 +84,7 @@ func (r *BrowserSystemReconciler) getBrowserControllerDeployment(
 		return nil, err
 	}
 
-	browserImage, err := getBrowserImage()
+	env, err := getBrowserControllerEnv(system)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +121,7 @@ func (r *BrowserSystemReconciler) getBrowserControllerDeployment(
 						Args:            []string{"--leader-elect", "--health-probe-bind-address=:8081"},
 						Name:            "browser-controller",
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						Env:             []corev1.EnvVar{{Name: "BROWSER_IMAGE", Value: browserImage}},
+						Env:             env,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -192,6 +190,21 @@ func (r *BrowserSystemReconciler) deleteAnyBrowsers(ctx context.Context, log *lo
 	}
 
 	return nil
+}
+
+// The browser controller lets only browser-api reach browser pods, so it needs
+// to know where browser-api runs.
+func getBrowserControllerEnv(system *corev1alpha1.BrowserSystem) ([]corev1.EnvVar, error) {
+	browserImage, err := getBrowserImage()
+	if err != nil {
+		return nil, err
+	}
+
+	return []corev1.EnvVar{
+		{Name: "BROWSER_IMAGE", Value: browserImage},
+		{Name: "BROWSER_API_NAMESPACE", Value: system.Namespace},
+		{Name: "BROWSER_API_NAME", Value: getBrowserAPIName(system.Name)},
+	}, nil
 }
 
 func (r *BrowserSystemReconciler) getServiceAccountName(_ *corev1alpha1.BrowserSystem) string {
