@@ -24,6 +24,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -105,6 +106,10 @@ func (r *BrowserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err = r.Get(ctx, types.NamespacedName{Name: browser.Name, Namespace: browser.Namespace}, service)
 	if err != nil {
 		return r.handleFailedToGetService(ctx, browser, &log, err)
+	}
+
+	if changed, err := r.reconcileNetworkPolicy(ctx, browser, &log); err != nil || changed {
+		return ctrl.Result{Requeue: changed}, err
 	}
 
 	// Check if the deployment already exists, if not create a new one
@@ -321,6 +326,7 @@ func (r *BrowserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("browser").
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Complete(r)
 }
 
