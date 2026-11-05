@@ -52,8 +52,10 @@ const (
 // BrowserSystemReconciler reconciles a BrowserSystem object
 type BrowserSystemReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	// APIReader reads objects that aren't worth caching cluster-wide.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	Recorder  record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=core.kubebrowser.io,resources=browsersystems,verbs=get;list;watch;create;update;patch;delete
@@ -177,7 +179,8 @@ func (r *BrowserSystemReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	// Nothing watches the front-proxy CA, so check it for rotation periodically.
+	return ctrl.Result{RequeueAfter: frontProxyCAResync}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

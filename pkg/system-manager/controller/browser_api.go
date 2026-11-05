@@ -60,6 +60,12 @@ func (r *BrowserSystemReconciler) reconcileBrowserApi(
 	}
 	/* browser-api Service	*/
 
+	/* browser-api auth ConfigMap	*/
+	if result, err := r.reconcileBrowserApiAuth(ctx, system, log); result != ReconciledOk {
+		return result, err
+	}
+	/* browser-api auth ConfigMap	*/
+
 	/* browser-api Deployment	*/
 	browserApiDeployment := &appsv1.Deployment{}
 	err = r.Get(ctx,
@@ -89,15 +95,17 @@ func (r *BrowserSystemReconciler) reconcileBrowserApi(
 		return ReconciledUpdated, nil
 	} else {
 		// deployment is here rightfully
-		desiredApiImage, err := getBrowserAPIImage()
+		desired, err := r.getBrowserApiDeployment(system)
 		if err != nil {
 			return ReconciledError, err
 		}
 
-		if browserApiDeployment.Spec.Template.Spec.Containers[0].Image != desiredApiImage {
-			browserApiDeployment.Spec.Template.Spec.Containers[0].Image = desiredApiImage
+		// Deployments created before the front-proxy check lack the auth volume.
+		if browserApiDeployment.Spec.Template.Spec.Containers[0].Image != desired.Spec.Template.Spec.Containers[0].Image ||
+			!hasVolume(browserApiDeployment.Spec.Template.Spec, authVolumeName) {
+			browserApiDeployment.Spec.Template = desired.Spec.Template
 			if err := r.Update(ctx, browserApiDeployment); err != nil {
-				log.Error(err, "failed to update browser api deployment image")
+				log.Error(err, "failed to update browser api deployment")
 				return ReconciledError, err
 			}
 			return ReconciledUpdated, nil
@@ -193,7 +201,10 @@ func (r *BrowserSystemReconciler) getBrowserApiDeployment(
 						Image:           image,
 						Name:            "browser-api",
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						VolumeMounts:    []corev1.VolumeMount{{Name: "certs", MountPath: "/tls", ReadOnly: true}},
+						VolumeMounts: []corev1.VolumeMount{
+							{Name: "certs", MountPath: "/tls", ReadOnly: true},
+							{Name: authVolumeName, MountPath: authMountPath, ReadOnly: true},
+						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -215,10 +226,16 @@ func (r *BrowserSystemReconciler) getBrowserApiDeployment(
 						},
 					},
 					},
-					Volumes: []corev1.Volume{{Name: "certs", VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: getBrowserAPICertsName(name),
-						}}}},
+					Volumes: []corev1.Volume{
+						{Name: "certs", VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName: getBrowserAPICertsName(name),
+							}}},
+						{Name: authVolumeName, VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{Name: getBrowserAPIAuthName(name)},
+							}}},
+					},
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
 						SeccompProfile: &corev1.SeccompProfile{

@@ -1,6 +1,7 @@
 package browser_api
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
@@ -32,6 +33,8 @@ type browserApiApp struct {
 	Port            int
 	TlsCertFilePath string
 	TlsKeyFilePath  string
+	// nil in development, where requests aren't proxied by the kube-apiserver
+	Auth *requestHeaderAuth
 }
 
 func NewBrowserApi() BrowserApi {
@@ -60,6 +63,7 @@ func NewBrowserApi() BrowserApi {
 	} else {
 		app.TlsCertFilePath = defaultTlsCertFilePath
 		app.TlsKeyFilePath = defaultTlsKeyFilePath
+		app.Auth = newRequestHeaderAuth(defaultClientCAFilePath, defaultAllowedNamesFilePath)
 	}
 
 	return app
@@ -89,12 +93,22 @@ func (app *browserApiApp) Run() {
 
 	router.HandleFunc(namespacedResourceUrl(gvr, "action"), executeBrowserAction).Methods("PUT")
 
+	var handler http.Handler = router
+	if app.Auth != nil {
+		handler = app.Auth.middleware(router)
+	} else {
+		fmt.Println("WARNING: front-proxy client certificate check is disabled in development")
+	}
+
+	server := &http.Server{
+		Addr:    app.BindAddress + ":" + strconv.Itoa(app.Port),
+		Handler: handler,
+		// The certificate is checked in the middleware against a CA that can
+		// change at runtime, so the handshake only asks for it.
+		TLSConfig: &tls.Config{ClientAuth: tls.RequestClientCert},
+	}
+
 	fmt.Printf("Server listening on port %v\n", strconv.Itoa(app.Port))
 
-	log.Fatal(http.ListenAndServeTLS(
-		app.BindAddress+":"+strconv.Itoa(app.Port),
-		app.TlsCertFilePath,
-		app.TlsKeyFilePath,
-		router,
-	))
+	log.Fatal(server.ListenAndServeTLS(app.TlsCertFilePath, app.TlsKeyFilePath))
 }
