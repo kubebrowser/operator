@@ -93,6 +93,8 @@ func (app *browserApiApp) Run() {
 
 	router.HandleFunc(namespacedResourceUrl(gvr, "action"), executeBrowserAction).Methods("PUT")
 
+	router.HandleFunc(namespacedResourceUrl(gvr, "state"), getBrowserState).Methods("GET")
+
 	var handler http.Handler = router
 	if app.Auth != nil {
 		handler = app.Auth.middleware(router)

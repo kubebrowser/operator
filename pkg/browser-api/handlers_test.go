@@ -174,3 +174,70 @@ func TestConnectToBrowserVNCMissingParams(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }
+
+// doState calls getBrowserState against upstream and returns the recorded response.
+func doState(t *testing.T, vars map[string]string, upstream http.HandlerFunc) *httptest.ResponseRecorder {
+	t.Helper()
+	server := httptest.NewServer(upstream)
+	t.Cleanup(server.Close)
+	orig := stateUrl
+	stateUrl = func(string, string) string { return server.URL }
+	t.Cleanup(func() { stateUrl = orig })
+
+	req := httptest.NewRequest(http.MethodGet, "/state", nil)
+	req = mux.SetURLVars(req, vars)
+	rec := httptest.NewRecorder()
+	getBrowserState(rec, req)
+	return rec
+}
+
+func TestGetBrowserState(t *testing.T) {
+	t.Run("relays known fields", func(t *testing.T) {
+		rec := doState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				t.Errorf("upstream method = %s, want GET", r.Method)
+			}
+			_, _ = io.WriteString(w, `{"url":"https://example.com/a","title":"Example","extra":"dropped"}`)
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d (body %q)", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", ct)
+		}
+		want := `{"url":"https://example.com/a","title":"Example"}` + "\n"
+		if rec.Body.String() != want {
+			t.Errorf("body = %q, want %q", rec.Body.String(), want)
+		}
+	})
+
+	t.Run("missing name", func(t *testing.T) {
+		rec := doState(t, map[string]string{"namespace": "ns"}, func(w http.ResponseWriter, r *http.Request) {
+			t.Error("upstream must not be called")
+		})
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("upstream error status", func(t *testing.T) {
+		rec := doState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+		if rec.Code != http.StatusBadGateway {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadGateway)
+		}
+		if !strings.Contains(rec.Body.String(), "'404'") {
+			t.Errorf("body = %q, want upstream status", rec.Body.String())
+		}
+	})
+
+	t.Run("invalid upstream json", func(t *testing.T) {
+		rec := doState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, `<html>`)
+		})
+		if rec.Code != http.StatusBadGateway {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadGateway)
+		}
+	})
+}

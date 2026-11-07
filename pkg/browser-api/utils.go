@@ -25,13 +25,14 @@ func groupVersionBasePath(gvr schema.GroupVersionResource) string {
 	return fmt.Sprintf("/apis/%s/%s", gvr.Group, gvr.Version)
 }
 
-func browserServerUrl(name string, namespace string) string {
+// browserServerUrl returns the URL of path on a browser's browser-server.
+func browserServerUrl(name string, namespace string, path string) string {
 	env := os.Getenv("ENVIRONMENT")
 	if env == devEnvironment {
-		return "http://localhost:3000/action"
+		return "http://localhost:3000" + path
 	}
 
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:3000/action", name, namespace)
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:3000%s", name, namespace, path)
 }
 
 func browserVncUrl(name string, namespace string) string {

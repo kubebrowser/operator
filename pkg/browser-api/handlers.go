@@ -34,6 +34,11 @@ func getAPIResourceList(w http.ResponseWriter, req *http.Request) {
 				Namespaced: true,
 				Verbs:      []string{"update"},
 			},
+			{
+				Name:       "browsers/state",
+				Namespaced: true,
+				Verbs:      []string{"get"},
+			},
 		},
 	}
 
@@ -55,6 +60,8 @@ const (
 	maxActionBodyBytes = 1 << 20
 	// maxUpstreamErrorBytes limits how much of a browser-server error body is relayed.
 	maxUpstreamErrorBytes = 4 << 10
+	// maxStateBodyBytes limits the size of a browser-server state response.
+	maxStateBodyBytes = 64 << 10
 
 	actionKindNavigate = "page-navigate"
 )
@@ -62,8 +69,9 @@ const (
 var (
 	browserServerClient = &http.Client{Timeout: browserServerTimeout}
 
-	// actionUrl resolves the browser-server action endpoint; tests override it.
-	actionUrl = browserServerUrl
+	// actionUrl and stateUrl resolve browser-server endpoints; tests override them.
+	actionUrl = func(name, namespace string) string { return browserServerUrl(name, namespace, "/action") }
+	stateUrl  = func(name, namespace string) string { return browserServerUrl(name, namespace, "/state") }
 )
 
 // writeError logs err and writes it as a text/plain response with the given status.
@@ -79,6 +87,39 @@ func validateNavigateUrl(raw string) error {
 		return errors.New("'url' must be an absolute http or https URL")
 	}
 	return nil
+}
+
+// writeRequestError writes a failed request to a browser-server as a response.
+func writeRequestError(w http.ResponseWriter, err error) {
+	var netErr net.Error
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		fmt.Println("ERROR", err)
+		http.Error(w, "browser is not running or not reachable", http.StatusServiceUnavailable)
+	case errors.As(err, &netErr) && netErr.Timeout():
+		fmt.Println("ERROR", err)
+		http.Error(w, "timed out waiting for the browser to respond", http.StatusGatewayTimeout)
+	default:
+		writeError(w, http.StatusBadGateway, err)
+	}
+}
+
+// writeUpstreamStatusError relays an unexpected browser-server status and body as a bad gateway.
+func writeUpstreamStatusError(w http.ResponseWriter, resp *http.Response) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("failed to read browser server response body: %w", err))
+		return
+	}
+
+	writeError(w, http.StatusBadGateway, errors.New("request to browser server returned status code '"+
+		strconv.Itoa(resp.StatusCode)+"' and body '"+string(body)+"'"))
+}
+
+func closeBody(resp *http.Response) {
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("error closing body: %v\n", err)
+	}
 }
 
 func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
@@ -147,39 +188,63 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 	fmt.Printf("Executing '%s' on browser '%s' in namespace '%s'\n", actionData.Kind, name, namespace)
 	resp, err := browserServerClient.Post(actionUrl(name, namespace), "application/json", bytes.NewReader(body))
 	if err != nil {
-		var netErr net.Error
-		switch {
-		case errors.Is(err, syscall.ECONNREFUSED):
-			fmt.Println("ERROR", err)
-			http.Error(w, "browser is not running or not reachable", http.StatusServiceUnavailable)
-		case errors.As(err, &netErr) && netErr.Timeout():
-			fmt.Println("ERROR", err)
-			http.Error(w, "timed out waiting for the browser to respond", http.StatusGatewayTimeout)
-		default:
-			writeError(w, http.StatusBadGateway, err)
-		}
+		writeRequestError(w, err)
 		return
 	}
 
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			fmt.Printf("error closing body: %v\n", err)
-		}
-	}()
+	defer closeBody(resp)
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		body, err = io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
-		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Errorf("failed to read browser server response body: %w", err))
-			return
-		}
-
-		writeError(w, http.StatusBadGateway, errors.New("request to browser server returned status code '"+
-			strconv.Itoa(resp.StatusCode)+"' and body '"+string(body)+"'"))
+		writeUpstreamStatusError(w, resp)
 		return
 	}
 
 	_, err = fmt.Fprint(w, "action executed")
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+// browserState is the page a browser is showing.
+type browserState struct {
+	Url   string `json:"url"`
+	Title string `json:"title"`
+}
+
+func getBrowserState(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	namespace := vars["namespace"]
+	name := vars["name"]
+
+	if namespace == "" || name == "" {
+		writeError(w, http.StatusBadRequest, errors.New("namespace or name parameter is missing in the url"))
+		return
+	}
+
+	resp, err := browserServerClient.Get(stateUrl(name, namespace))
+	if err != nil {
+		writeRequestError(w, err)
+		return
+	}
+
+	defer closeBody(resp)
+
+	if resp.StatusCode != http.StatusOK {
+		writeUpstreamStatusError(w, resp)
+		return
+	}
+
+	// decode and re-encode so only the known fields are passed on
+	state := browserState{}
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxStateBodyBytes)).Decode(&state)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("failed to decode browser server state: %w", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	err = json.NewEncoder(w).Encode(state)
 	if err != nil {
 		fmt.Println(err)
 	}
