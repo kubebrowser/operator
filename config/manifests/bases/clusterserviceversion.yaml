@@ -14,6 +14,8 @@ metadata:
     features.operators.openshift.io/disconnected: "false"
     features.operators.openshift.io/proxy-aware: "true"
     categories: Developer Tools
+    # Lets the OperatorHub install page offer to enable the console plugin; without it the plugin stays off
+    console.openshift.io/plugins: '["kubebrowser-plugin"]'
     repository: https://github.com/kubebrowser/operator
     support: None
     containerImage: ghcr.io/kubebrowser/system-manager:0.1.0
