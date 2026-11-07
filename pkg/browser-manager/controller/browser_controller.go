@@ -144,8 +144,8 @@ func (r *BrowserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.handleDeploymentImageMismatch(ctx, browser, &log, deployment, desiredImage, req.NamespacedName)
 	}
 
-	if !probesMatch(&deployment.Spec.Template.Spec.Containers[0]) {
-		return r.handleDeploymentProbesMismatch(ctx, &log, deployment)
+	if !rolloutSettingsMatch(deployment) {
+		return r.handleDeploymentRolloutSettingsMismatch(ctx, &log, deployment)
 	}
 
 	if err := r.Get(ctx, req.NamespacedName, browser); err != nil {
@@ -207,6 +207,7 @@ func (r *BrowserReconciler) deploymentForBrowser(
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
+			Strategy: strategyForBrowser(),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: targetLabels,
 			},

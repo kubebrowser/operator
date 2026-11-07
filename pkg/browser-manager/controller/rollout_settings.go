@@ -46,24 +46,35 @@ func livenessProbeForBrowser() *corev1.Probe {
 	}
 }
 
-// probesMatch reports whether the browser container already has the desired probes.
-func probesMatch(container *corev1.Container) bool {
-	return equality.Semantic.DeepEqual(container.ReadinessProbe, readinessProbeForBrowser()) &&
+// strategyForBrowser replaces the pod instead of rolling it: a browser is a single
+// stateful replica, and a rolling update needs room for a second browser pod, which
+// leaves the new pod Pending on a full node.
+func strategyForBrowser() appsv1.DeploymentStrategy {
+	return appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
+}
+
+// rolloutSettingsMatch reports whether the Deployment already has the desired
+// strategy and probes.
+func rolloutSettingsMatch(deployment *appsv1.Deployment) bool {
+	container := &deployment.Spec.Template.Spec.Containers[0]
+	return equality.Semantic.DeepEqual(deployment.Spec.Strategy, strategyForBrowser()) &&
+		equality.Semantic.DeepEqual(container.ReadinessProbe, readinessProbeForBrowser()) &&
 		equality.Semantic.DeepEqual(container.LivenessProbe, livenessProbeForBrowser())
 }
 
-// handleDeploymentProbesMismatch adds or restores the probes on Deployments created
-// before they existed, or edited since.
-func (r *BrowserReconciler) handleDeploymentProbesMismatch(
+// handleDeploymentRolloutSettingsMismatch sets the strategy and probes on Deployments
+// created before they existed, or edited since.
+func (r *BrowserReconciler) handleDeploymentRolloutSettingsMismatch(
 	ctx context.Context,
 	log *logr.Logger,
 	deployment *appsv1.Deployment,
 ) (ctrl.Result, error) {
+	deployment.Spec.Strategy = strategyForBrowser()
 	deployment.Spec.Template.Spec.Containers[0].ReadinessProbe = readinessProbeForBrowser()
 	deployment.Spec.Template.Spec.Containers[0].LivenessProbe = livenessProbeForBrowser()
 
 	if err := r.Update(ctx, deployment); err != nil {
-		log.Error(err, "Failed to update Deployment probes",
+		log.Error(err, "Failed to update Deployment strategy and probes",
 			"Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
 		return ctrl.Result{}, err
 	}
