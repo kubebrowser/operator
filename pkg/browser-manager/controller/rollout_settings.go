@@ -11,14 +11,25 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// readinessProbeForBrowser marks the pod ready once x11vnc listens, so the console
-// doesn't open the viewer before VNC is up.
+// healthzForBrowser checks the action server. It listens only once Chromium is up,
+// a few seconds after x11vnc attaches to Xvfb, and answers 503 once Chromium disconnects.
+func healthzForBrowser() corev1.ProbeHandler {
+	return corev1.ProbeHandler{
+		HTTPGet: &corev1.HTTPGetAction{
+			Path:   "/healthz",
+			Port:   intstr.FromInt32(3000),
+			Scheme: corev1.URISchemeHTTP,
+		},
+	}
+}
+
+// readinessProbeForBrowser marks the pod ready once the browser answers, so the console
+// doesn't open the viewer before VNC and the action API are up. It probes HTTP rather
+// than the VNC port, because x11vnc logs every probe connection as an error.
 // Every field the API server defaults is set, so the probe compares equal after a round trip.
 func readinessProbeForBrowser() *corev1.Probe {
 	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(5900)},
-		},
+		ProbeHandler:        healthzForBrowser(),
 		InitialDelaySeconds: 2,
 		PeriodSeconds:       2,
 		TimeoutSeconds:      1,
@@ -31,13 +42,7 @@ func readinessProbeForBrowser() *corev1.Probe {
 // for example when it failed to start or Chromium disconnected.
 func livenessProbeForBrowser() *corev1.Probe {
 	return &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path:   "/healthz",
-				Port:   intstr.FromInt32(3000),
-				Scheme: corev1.URISchemeHTTP,
-			},
-		},
+		ProbeHandler:        healthzForBrowser(),
 		InitialDelaySeconds: 30,
 		PeriodSeconds:       10,
 		TimeoutSeconds:      2,
