@@ -144,6 +144,10 @@ func (r *BrowserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.handleDeploymentImageMismatch(ctx, browser, &log, deployment, desiredImage, req.NamespacedName)
 	}
 
+	if !probesMatch(&deployment.Spec.Template.Spec.Containers[0]) {
+		return r.handleDeploymentProbesMismatch(ctx, &log, deployment)
+	}
+
 	if err := r.Get(ctx, req.NamespacedName, browser); err != nil {
 		log.Error(err, "32 Failed to re-fetch browser")
 		return ctrl.Result{}, err
@@ -222,6 +226,8 @@ func (r *BrowserReconciler) deploymentForBrowser(
 						Name:            "browser",
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Resources:       browser.Spec.BrowserResources,
+						ReadinessProbe:  readinessProbeForBrowser(),
+						LivenessProbe:   livenessProbeForBrowser(),
 						Env: []corev1.EnvVar{{
 							Name:  "BROWSER_WIDTH",
 							Value: "1280",
