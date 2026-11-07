@@ -1,10 +1,10 @@
 #
 BUNDLE_IMAGE = ghcr.io/kubebrowser/operator-bundle
-SYSTEM_MANAGER_IMAGE = ghcr.io/kubebrowser/system-manager:0.0.2
-BROWSER_MANAGER_IMAGE = ghcr.io/kubebrowser/browser-manager:0.0.2
-BROWSER_API_IMAGE = ghcr.io/kubebrowser/browser-api:0.0.1
-BROWSER_IMAGE = ghcr.io/kubebrowser/browser-server:0.0.2
-CONSOLE_PLUGIN_IMAGE = ghcr.io/kubebrowser/console-plugin:0.0.2
+SYSTEM_MANAGER_IMAGE = ghcr.io/kubebrowser/system-manager:0.1.0
+BROWSER_MANAGER_IMAGE = ghcr.io/kubebrowser/browser-manager:0.1.0
+BROWSER_API_IMAGE = ghcr.io/kubebrowser/browser-api:0.1.0
+BROWSER_IMAGE = ghcr.io/kubebrowser/browser-server:0.1.0
+CONSOLE_PLUGIN_IMAGE = ghcr.io/kubebrowser/console-plugin:0.1.0
 
 SET_IMAGES = $(YQ) 'select(.kind=="Deployment").spec.template.spec.containers[] |= (select(.name=="manager").image="${SYSTEM_MANAGER_IMAGE}") |= .env[] |= (select(.name=="BROWSER_MANAGER_IMAGE").value="${BROWSER_MANAGER_IMAGE}") |= (select(.name=="BROWSER_API_IMAGE").value="${BROWSER_API_IMAGE}") |= (select(.name=="BROWSER_IMAGE").value="${BROWSER_IMAGE}") |= (select(.name=="CONSOLE_PLUGIN_IMAGE").value="${CONSOLE_PLUGIN_IMAGE}")'
 
