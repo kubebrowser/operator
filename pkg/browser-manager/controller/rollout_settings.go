@@ -6,7 +6,6 @@ import (
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -26,7 +25,6 @@ func healthzForBrowser() corev1.ProbeHandler {
 // readinessProbeForBrowser marks the pod ready once the browser answers, so the console
 // doesn't open the viewer before VNC and the action API are up. It probes HTTP rather
 // than the VNC port, because x11vnc logs every probe connection as an error.
-// Every field the API server defaults is set, so the probe compares equal after a round trip.
 func readinessProbeForBrowser() *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler:        healthzForBrowser(),
@@ -59,12 +57,28 @@ func strategyForBrowser() appsv1.DeploymentStrategy {
 }
 
 // rolloutSettingsMatch reports whether the Deployment already has the desired
-// strategy and probes.
+// strategy and probes. It compares only the fields set here, so a field the API
+// server starts defaulting later can't make it report a mismatch on every reconcile.
 func rolloutSettingsMatch(deployment *appsv1.Deployment) bool {
 	container := &deployment.Spec.Template.Spec.Containers[0]
-	return equality.Semantic.DeepEqual(deployment.Spec.Strategy, strategyForBrowser()) &&
-		equality.Semantic.DeepEqual(container.ReadinessProbe, readinessProbeForBrowser()) &&
-		equality.Semantic.DeepEqual(container.LivenessProbe, livenessProbeForBrowser())
+	return deployment.Spec.Strategy.Type == strategyForBrowser().Type &&
+		probeMatches(container.ReadinessProbe, readinessProbeForBrowser()) &&
+		probeMatches(container.LivenessProbe, livenessProbeForBrowser())
+}
+
+// probeMatches compares the HTTP check and timings of a probe built by this package.
+func probeMatches(actual, desired *corev1.Probe) bool {
+	if actual == nil || actual.HTTPGet == nil {
+		return false
+	}
+	return actual.HTTPGet.Path == desired.HTTPGet.Path &&
+		actual.HTTPGet.Port == desired.HTTPGet.Port &&
+		actual.HTTPGet.Scheme == desired.HTTPGet.Scheme &&
+		actual.InitialDelaySeconds == desired.InitialDelaySeconds &&
+		actual.PeriodSeconds == desired.PeriodSeconds &&
+		actual.TimeoutSeconds == desired.TimeoutSeconds &&
+		actual.SuccessThreshold == desired.SuccessThreshold &&
+		actual.FailureThreshold == desired.FailureThreshold
 }
 
 // handleDeploymentRolloutSettingsMismatch sets the strategy and probes on Deployments
