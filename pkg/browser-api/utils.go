@@ -21,6 +21,12 @@ func namespacedResourceUrl(gvr schema.GroupVersionResource, subpath string) stri
 	return fmt.Sprintf("/apis/%s/%s/namespaces/{namespace}/%s/{name}/%s", gvr.Group, gvr.Version, gvr.Resource, subpath)
 }
 
+// watchResourceUrl is namespacedResourceUrl under the /watch/ prefix. The kube-apiserver classifies these requests
+// as the watch verb, so a connection doesn't hold an API Priority and Fairness seat or hit the request timeout.
+func watchResourceUrl(gvr schema.GroupVersionResource, subpath string) string {
+	return fmt.Sprintf("/apis/%s/%s/watch/namespaces/{namespace}/%s/{name}/%s", gvr.Group, gvr.Version, gvr.Resource, subpath)
+}
+
 func groupVersionBasePath(gvr schema.GroupVersionResource) string {
 	return fmt.Sprintf("/apis/%s/%s", gvr.Group, gvr.Version)
 }

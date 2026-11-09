@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 )
 
 // doAction calls executeBrowserAction with the given vars and body and
@@ -175,69 +176,131 @@ func TestConnectToBrowserVNCMissingParams(t *testing.T) {
 	}
 }
 
-// doState calls getBrowserState against upstream and returns the recorded response.
-func doState(t *testing.T, vars map[string]string, upstream http.HandlerFunc) *httptest.ResponseRecorder {
+// dialState connects to watchBrowserState against upstream. The connection is closed when the test ends.
+func dialState(t *testing.T, vars map[string]string, upstream http.HandlerFunc) (*websocket.Conn, *http.Response, error) {
 	t.Helper()
-	server := httptest.NewServer(upstream)
-	t.Cleanup(server.Close)
+	upstreamServer := httptest.NewServer(upstream)
+	t.Cleanup(upstreamServer.Close)
 	orig := stateUrl
-	stateUrl = func(string, string) string { return server.URL }
+	stateUrl = func(string, string) string { return upstreamServer.URL }
 	t.Cleanup(func() { stateUrl = orig })
 
-	req := httptest.NewRequest(http.MethodGet, "/state", nil)
-	req = mux.SetURLVars(req, vars)
-	rec := httptest.NewRecorder()
-	getBrowserState(rec, req)
-	return rec
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		watchBrowserState(w, mux.SetURLVars(r, vars))
+	}))
+	t.Cleanup(server.Close)
+
+	conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err == nil {
+		t.Cleanup(func() { _ = conn.Close() })
+	}
+	return conn, resp, err
 }
 
-func TestGetBrowserState(t *testing.T) {
-	t.Run("relays known fields", func(t *testing.T) {
-		rec := doState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
+func writeStateLine(t *testing.T, w http.ResponseWriter, line string) {
+	t.Helper()
+	if _, err := io.WriteString(w, line+"\n"); err != nil {
+		t.Error(err)
+	}
+	w.(http.Flusher).Flush()
+}
+
+func readState(t *testing.T, conn *websocket.Conn) string {
+	t.Helper()
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	return strings.TrimSpace(string(message))
+}
+
+func TestWatchBrowserState(t *testing.T) {
+	t.Run("relays known fields as they arrive, then closes", func(t *testing.T) {
+		next := make(chan struct{})
+		conn, _, err := dialState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet {
 				t.Errorf("upstream method = %s, want GET", r.Method)
 			}
-			_, _ = io.WriteString(w, `{"url":"https://example.com/a","title":"Example","extra":"dropped"}`)
+			writeStateLine(t, w, `{"url":"https://example.com/a","extra":"dropped"}`)
+			<-next
+			writeStateLine(t, w, `{"url":"https://example.com/b"}`)
 		})
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d (body %q)", rec.Code, http.StatusOK, rec.Body.String())
+		if err != nil {
+			t.Fatalf("dial: %v", err)
 		}
-		if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-			t.Errorf("Content-Type = %q, want application/json", ct)
+		if got, want := readState(t, conn), `{"url":"https://example.com/a"}`; got != want {
+			t.Errorf("first message = %q, want %q", got, want)
 		}
-		want := `{"url":"https://example.com/a","title":"Example"}` + "\n"
-		if rec.Body.String() != want {
-			t.Errorf("body = %q, want %q", rec.Body.String(), want)
+		close(next)
+		if got, want := readState(t, conn), `{"url":"https://example.com/b"}`; got != want {
+			t.Errorf("second message = %q, want %q", got, want)
+		}
+		if _, _, err := conn.ReadMessage(); !websocket.IsCloseError(err, websocket.CloseGoingAway) {
+			t.Errorf("after the stream ended: err = %v, want a going-away close", err)
+		}
+	})
+
+	t.Run("stops reading upstream when the client disconnects", func(t *testing.T) {
+		upstreamDone := make(chan struct{})
+		conn, _, err := dialState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
+			writeStateLine(t, w, `{"url":"https://example.com/a"}`)
+			<-r.Context().Done()
+			close(upstreamDone)
+		})
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		readState(t, conn)
+		_ = conn.Close()
+		select {
+		case <-upstreamDone:
+		case <-time.After(5 * time.Second):
+			t.Error("upstream request was not cancelled")
 		}
 	})
 
 	t.Run("missing name", func(t *testing.T) {
-		rec := doState(t, map[string]string{"namespace": "ns"}, func(w http.ResponseWriter, r *http.Request) {
+		_, resp, err := dialState(t, map[string]string{"namespace": "ns"}, func(w http.ResponseWriter, r *http.Request) {
 			t.Error("upstream must not be called")
 		})
+		if err == nil {
+			t.Fatal("dial succeeded, want a failed handshake")
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("not a websocket request", func(t *testing.T) {
+		req := mux.SetURLVars(httptest.NewRequest(http.MethodGet, "/state", nil), testVars)
+		rec := httptest.NewRecorder()
+		watchBrowserState(rec, req)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 		}
 	})
 
 	t.Run("upstream error status", func(t *testing.T) {
-		rec := doState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
+		_, resp, err := dialState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		})
-		if rec.Code != http.StatusBadGateway {
-			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadGateway)
+		if err == nil {
+			t.Fatal("dial succeeded, want a failed handshake")
 		}
-		if !strings.Contains(rec.Body.String(), "'404'") {
-			t.Errorf("body = %q, want upstream status", rec.Body.String())
+		if resp.StatusCode != http.StatusBadGateway {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadGateway)
 		}
 	})
 
 	t.Run("invalid upstream json", func(t *testing.T) {
-		rec := doState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.WriteString(w, `<html>`)
+		conn, _, err := dialState(t, testVars, func(w http.ResponseWriter, r *http.Request) {
+			writeStateLine(t, w, `<html>`)
 		})
-		if rec.Code != http.StatusBadGateway {
-			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadGateway)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		if _, _, err := conn.ReadMessage(); !websocket.IsCloseError(err, websocket.CloseGoingAway) {
+			t.Errorf("err = %v, want a going-away close", err)
 		}
 	})
 }

@@ -41,4 +41,4 @@ rules:
     resources:
       - browsers/state
     verbs:
-      - get
+      - watch
