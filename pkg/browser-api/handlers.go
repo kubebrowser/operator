@@ -1,7 +1,9 @@
 package browser_api
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +36,11 @@ func getAPIResourceList(w http.ResponseWriter, req *http.Request) {
 				Namespaced: true,
 				Verbs:      []string{"update"},
 			},
+			{
+				Name:       "browsers/state",
+				Namespaced: true,
+				Verbs:      []string{"watch"},
+			},
 		},
 	}
 
@@ -55,6 +62,10 @@ const (
 	maxActionBodyBytes = 1 << 20
 	// maxUpstreamErrorBytes limits how much of a browser-server error body is relayed.
 	maxUpstreamErrorBytes = 4 << 10
+	// maxStateLineBytes limits the size of a browser-server state message, and matches Chromium's URL length limit.
+	maxStateLineBytes = 2 << 20
+	// maxStateClientMessageBytes limits what a state client can send; it has no reason to send anything.
+	maxStateClientMessageBytes = 1 << 10
 
 	actionKindNavigate = "page-navigate"
 )
@@ -62,8 +73,22 @@ const (
 var (
 	browserServerClient = &http.Client{Timeout: browserServerTimeout}
 
-	// actionUrl resolves the browser-server action endpoint; tests override it.
-	actionUrl = browserServerUrl
+	// browserStateClient has no overall timeout because a state response stays open.
+	browserStateClient = &http.Client{Transport: func() http.RoundTripper {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.ResponseHeaderTimeout = browserServerTimeout
+		return transport
+	}()}
+
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
+	// actionUrl and stateUrl resolve browser-server endpoints; tests override them.
+	actionUrl = func(name, namespace string) string { return browserServerUrl(name, namespace, "/action") }
+	stateUrl  = func(name, namespace string) string { return browserServerUrl(name, namespace, "/state") }
 )
 
 // writeError logs err and writes it as a text/plain response with the given status.
@@ -79,6 +104,39 @@ func validateNavigateUrl(raw string) error {
 		return errors.New("'url' must be an absolute http or https URL")
 	}
 	return nil
+}
+
+// writeRequestError writes a failed request to a browser-server as a response.
+func writeRequestError(w http.ResponseWriter, err error) {
+	var netErr net.Error
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		fmt.Println("ERROR", err)
+		http.Error(w, "browser is not running or not reachable", http.StatusServiceUnavailable)
+	case errors.As(err, &netErr) && netErr.Timeout():
+		fmt.Println("ERROR", err)
+		http.Error(w, "timed out waiting for the browser to respond", http.StatusGatewayTimeout)
+	default:
+		writeError(w, http.StatusBadGateway, err)
+	}
+}
+
+// writeUpstreamStatusError relays an unexpected browser-server status and body as a bad gateway.
+func writeUpstreamStatusError(w http.ResponseWriter, resp *http.Response) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("failed to read browser server response body: %w", err))
+		return
+	}
+
+	writeError(w, http.StatusBadGateway, errors.New("request to browser server returned status code '"+
+		strconv.Itoa(resp.StatusCode)+"' and body '"+string(body)+"'"))
+}
+
+func closeBody(resp *http.Response) {
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("error closing body: %v\n", err)
+	}
 }
 
 func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
@@ -147,39 +205,110 @@ func executeBrowserAction(w http.ResponseWriter, req *http.Request) {
 	fmt.Printf("Executing '%s' on browser '%s' in namespace '%s'\n", actionData.Kind, name, namespace)
 	resp, err := browserServerClient.Post(actionUrl(name, namespace), "application/json", bytes.NewReader(body))
 	if err != nil {
-		var netErr net.Error
-		switch {
-		case errors.Is(err, syscall.ECONNREFUSED):
-			fmt.Println("ERROR", err)
-			http.Error(w, "browser is not running or not reachable", http.StatusServiceUnavailable)
-		case errors.As(err, &netErr) && netErr.Timeout():
-			fmt.Println("ERROR", err)
-			http.Error(w, "timed out waiting for the browser to respond", http.StatusGatewayTimeout)
-		default:
-			writeError(w, http.StatusBadGateway, err)
-		}
+		writeRequestError(w, err)
 		return
 	}
 
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			fmt.Printf("error closing body: %v\n", err)
-		}
-	}()
+	defer closeBody(resp)
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		body, err = io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
-		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Errorf("failed to read browser server response body: %w", err))
-			return
-		}
-
-		writeError(w, http.StatusBadGateway, errors.New("request to browser server returned status code '"+
-			strconv.Itoa(resp.StatusCode)+"' and body '"+string(body)+"'"))
+		writeUpstreamStatusError(w, resp)
 		return
 	}
 
 	_, err = fmt.Fprint(w, "action executed")
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+// browserState is the page a browser is showing.
+type browserState struct {
+	Url string `json:"url"`
+}
+
+// watchBrowserState relays a browser-server's state stream to a read-only WebSocket.
+func watchBrowserState(w http.ResponseWriter, req *http.Request) {
+	vars := mux.Vars(req)
+	namespace := vars["namespace"]
+	name := vars["name"]
+
+	if namespace == "" || name == "" {
+		writeError(w, http.StatusBadRequest, errors.New("namespace or name parameter is missing in the url"))
+		return
+	}
+
+	if !websocket.IsWebSocketUpgrade(req) {
+		writeError(w, http.StatusBadRequest, errors.New("browsers/state requires a websocket connection"))
+		return
+	}
+
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+
+	// connect before upgrading, so that failures can still be reported with a status code
+	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, stateUrl(name, namespace), nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	resp, err := browserStateClient.Do(upstreamReq)
+	if err != nil {
+		writeRequestError(w, err)
+		return
+	}
+
+	defer closeBody(resp)
+
+	if resp.StatusCode != http.StatusOK {
+		writeUpstreamStatusError(w, resp)
+		return
+	}
+
+	wsConn, err := upgrader.Upgrade(w, req, nil)
+	if err != nil {
+		fmt.Println("Upgrade failed:", err)
+		return
+	}
+
+	defer func() {
+		if err := wsConn.Close(); err != nil {
+			fmt.Printf("error closing connection: %v\n", err)
+		}
+	}()
+
+	// stop reading from the browser-server once the client goes away
+	wsConn.SetReadLimit(maxStateClientMessageBytes)
+	go func() {
+		defer cancel()
+		for {
+			if _, _, err := wsConn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(nil, maxStateLineBytes)
+	for scanner.Scan() {
+		// decode and re-encode so only the known fields are passed on
+		state := browserState{}
+		if err := json.Unmarshal(scanner.Bytes(), &state); err != nil {
+			fmt.Println("ERROR failed to decode browser server state:", err)
+			break
+		}
+		if err := wsConn.WriteJSON(state); err != nil {
+			return
+		}
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	// the client reconnects, which also covers the browser-server restarting
+	err = wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "browser state stream ended"))
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -196,12 +325,6 @@ func connectToBrowserVNC(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// check browser exists in this namespace or if user has acces?
-
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
 
 	wsConn, err := upgrader.Upgrade(w, req, nil)
 	if err != nil {

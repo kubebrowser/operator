@@ -21,17 +21,24 @@ func namespacedResourceUrl(gvr schema.GroupVersionResource, subpath string) stri
 	return fmt.Sprintf("/apis/%s/%s/namespaces/{namespace}/%s/{name}/%s", gvr.Group, gvr.Version, gvr.Resource, subpath)
 }
 
+// watchResourceUrl is namespacedResourceUrl under the /watch/ prefix. The kube-apiserver classifies these requests
+// as the watch verb, so a connection doesn't hold an API Priority and Fairness seat or hit the request timeout.
+func watchResourceUrl(gvr schema.GroupVersionResource, subpath string) string {
+	return fmt.Sprintf("/apis/%s/%s/watch/namespaces/{namespace}/%s/{name}/%s", gvr.Group, gvr.Version, gvr.Resource, subpath)
+}
+
 func groupVersionBasePath(gvr schema.GroupVersionResource) string {
 	return fmt.Sprintf("/apis/%s/%s", gvr.Group, gvr.Version)
 }
 
-func browserServerUrl(name string, namespace string) string {
+// browserServerUrl returns the URL of path on a browser's browser-server.
+func browserServerUrl(name string, namespace string, path string) string {
 	env := os.Getenv("ENVIRONMENT")
 	if env == devEnvironment {
-		return "http://localhost:3000/action"
+		return "http://localhost:3000" + path
 	}
 
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:3000/action", name, namespace)
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local.:3000%s", name, namespace, path)
 }
 
 func browserVncUrl(name string, namespace string) string {

@@ -27,3 +27,18 @@ rules:
       - browsers/vnc
     verbs:
       - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: browser-state
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+rules:
+  - apiGroups:
+      - subresource.kubebrowser.io
+    resources:
+      - browsers/state
+    verbs:
+      - watch
