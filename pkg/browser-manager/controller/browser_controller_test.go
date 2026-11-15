@@ -160,8 +160,25 @@ var _ = Describe("Browser controller", func() {
 				HaveKeyWithValue("app", "browsersystem-browser-api"))
 			Expect(policy.Spec.Ingress[0].Ports).To(HaveLen(2))
 
-			By("Reconciling the custom resource again")
+			By("Checking that the browser Deployment has its strategy and probes")
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, deployment)).To(Succeed())
+			Expect(rolloutSettingsMatch(deployment)).To(BeTrue())
+
+			By("Restoring the strategy and probes on a Deployment that lost them")
+			deployment.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType}
+			deployment.Spec.Template.Spec.Containers[0].ReadinessProbe = nil
+			deployment.Spec.Template.Spec.Containers[0].LivenessProbe = nil
+			Expect(k8sClient.Update(ctx, deployment)).To(Succeed())
 			_, err := browserReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Get(ctx, typeNamespacedName, deployment)).To(Succeed())
+			Expect(rolloutSettingsMatch(deployment)).To(BeTrue())
+
+			By("Reconciling the custom resource again")
+			_, err = browserReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
