@@ -16,7 +16,7 @@ metadata:
     categories: Developer Tools
     repository: https://github.com/kubebrowser/operator
     support: None
-    containerImage: ghcr.io/kubebrowser/system-manager:0.1.0
+    containerImage: ghcr.io/kubebrowser/system-manager:0.1.1
   labels:
     operatorframework.io/os.linux: supported
     operatorframework.io/arch.amd64: supported
