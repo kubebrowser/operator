@@ -302,7 +302,7 @@ endif
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
 else
-BUNDLE_CHANNELS := --channels=alpha
+BUNDLE_CHANNELS := --channels=alpha,fast
 endif
 
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
